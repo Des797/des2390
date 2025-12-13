@@ -6,17 +6,30 @@ Create this exact folder structure:
 
 ```
 rule34_scraper/
-├── app.py
-├── rule34_scraper.db (created automatically)
-├── rule34_scraper.log (created automatically)
+├── app.py                      # Main Flask application
+├── database.py                 # Database operations module
+├── api_client.py               # Rule34 API client module
+├── file_manager.py             # File operations module
+├── scraper.py                  # Scraper logic module
+├── rule34_scraper.db          # Database (created automatically)
+├── rule34_scraper.log         # Logs (created automatically)
 ├── templates/
-│   ├── index.html
-│   └── login.html
+│   ├── index.html             # Main interface
+│   └── login.html             # Login page
 └── static/
     ├── css/
-    │   └── style.css
+    │   └── style.css          # All styles
     └── js/
-        └── app.js (combine Part 1 and Part 2)
+        ├── main.js            # Main entry point
+        ├── state.js           # State management & browser history
+        ├── utils.js           # Utility functions
+        ├── api.js             # API calls
+        ├── config.js          # Configuration management
+        ├── posts.js           # Posts display & management
+        ├── modal.js           # Modal/lightbox functions
+        ├── bulk.js            # Bulk operations
+        ├── scraper_ui.js      # Scraper UI controls
+        └── navigation.js      # Tab navigation
 ```
 
 ## 🔧 Installation
@@ -31,11 +44,9 @@ pip install flask elasticsearch requests
 
 1. **Create the folder structure** as shown above
 2. **Copy each artifact** to its corresponding file:
-   - `app.py` → Backend code
-   - `templates/login.html` → Login page
-   - `templates/index.html` → Main interface
-   - `static/css/style.css` → All styles
-   - `static/js/app.js` → Combine Part 1 + Part 2 (append Part 2 to Part 1)
+   - Backend Python modules (app.py, database.py, api_client.py, file_manager.py, scraper.py)
+   - Templates (index.html, login.html)
+   - Static files (style.css, all JavaScript modules)
 
 ### 3. Configure Environment Variables
 
@@ -73,9 +84,9 @@ load_dotenv()
 
 ## 🚀 Running the Application
 
-### 1. Start Elasticsearch
+### 1. Start Elasticsearch (Optional)
 
-Make sure your Elasticsearch instance is running at `https://localhost:9200`
+Elasticsearch is optional. If available, make sure it's running at `https://localhost:9200`
 
 ### 2. Start the Flask App
 
@@ -120,20 +131,17 @@ Use the username and password you set in environment variables.
 - View real-time statistics
 - Monitor requests per minute
 
-### Pending Posts Tab
-- View all scraped posts awaiting review
+### Posts Tab (Merged Pending & Saved)
+- **View filter dropdown**: All Posts / Pending Only / Saved Only
+- View all posts with status badges (PENDING/SAVED)
 - **Advanced search**: `tag1 tag2 owner:username score:>50`
 - **Sorting**: Download date, upload date, ID, score, tag count, file size
-- **Bulk operations**: Save/discard multiple posts
+- **Bulk operations**: Save/discard pending posts, delete saved posts
+- **Tag counts**: Each tag shows count in parentheses `tag_name (123)`
 - **Select posts** by clicking checkboxes
 - Click thumbnails for full-resolution view
 - Navigate between posts with arrow buttons
-
-### Saved Posts Tab
-- View all saved posts
-- Same search and sorting features as Pending
-- Bulk delete operations
-- Open posts on Rule34 website
+- **Browser back/forward works correctly** - navigation state is preserved in URL
 
 ### Blacklist Tab
 - Add tags to automatically exclude from scraping
@@ -151,6 +159,12 @@ Use the username and password you set in environment variables.
 - **Arrow Left/Right**: Navigate between posts in modal
 - **Enter** (in search): Start scraping
 
+## 🌐 Browser Navigation
+
+- **Back/Forward buttons work correctly**: The browser history is properly managed
+- **Bookmarkable URLs**: Each view state is reflected in the URL
+- **Deep linking**: Share URLs that point to specific filters, pages, and searches
+
 ## 🎨 Mobile Support
 
 The interface is fully responsive and works on:
@@ -162,7 +176,7 @@ The interface is fully responsive and works on:
 
 - **Password protection**: Required to access from any device
 - **Session-based**: Stay logged in while using the app
-- **Network access**: Only devices on your WiFi can access
+- **Network access**: Accessible from any device on your local network
 
 ## ⚙️ Advanced Configuration
 
@@ -173,7 +187,7 @@ Edit `app.py` (last line):
 app.run(debug=True, host="0.0.0.0", port=5000)  # Change 5000 to your port
 ```
 
-### Elasticsearch Configuration
+### Elasticsearch Configuration (Optional)
 
 Edit the constants in `app.py`:
 ```python
@@ -185,12 +199,13 @@ ES_CA_CERT = r"path/to/cert"
 ES_INDEX = "objects"
 ```
 
+**Note**: The scraper works perfectly fine without Elasticsearch. It's only used for additional indexing.
+
 ## 🐛 Troubleshooting
 
 ### "Failed to connect to Elasticsearch"
-- Ensure Elasticsearch is running
-- Check the certificate path is correct
-- Verify credentials
+- This is a warning, not an error - the app will work without Elasticsearch
+- To fix: Ensure Elasticsearch is running, check certificate path, verify credentials
 
 ### "Login page won't load"
 - Check environment variables are set
@@ -206,9 +221,35 @@ ES_INDEX = "objects"
 - Check temp/save paths exist and are writable
 - Review `rule34_scraper.log` for errors
 
+### JavaScript Modules Not Loading
+- Ensure all `.js` files are in `static/js/` directory
+- Check browser console for errors
+- Verify file paths are correct
+
 ## 📊 Rate Limiting
 
 The scraper automatically limits requests to **60 per minute** to comply with Rule34's API limits. Bulk operations will respect this limit and show estimated completion time.
+
+## 🏗️ Architecture
+
+### Backend (Python)
+- **app.py**: Main Flask routes and application setup
+- **database.py**: All database operations (SQLite)
+- **api_client.py**: Rule34 API communication and rate limiting
+- **file_manager.py**: File system operations
+- **scraper.py**: Main scraping logic
+
+### Frontend (JavaScript Modules)
+- **main.js**: Entry point, initializes everything
+- **state.js**: Global state and browser history management
+- **utils.js**: Utility functions (formatting, filtering, etc.)
+- **api.js**: Frontend API calls to Flask backend
+- **config.js**: Configuration UI management
+- **posts.js**: Posts display, filtering, sorting
+- **modal.js**: Lightbox/modal functionality
+- **bulk.js**: Bulk operations on multiple posts
+- **scraper_ui.js**: Scraper controls and status
+- **navigation.js**: Tab switching
 
 ## 🚧 Future API Features (Currently Disabled)
 
@@ -223,16 +264,18 @@ The UI is ready - these will work once API endpoints are available.
 
 - **Post skipping works**: The scraper automatically skips posts you've already saved or discarded
 - **Database is local**: All data stored in `rule34_scraper.db`
+- **Tag counts**: Automatically maintained for all posts in your database
 - **Logs available**: Check `rule34_scraper.log` for debugging
 - **Backup recommended**: Periodically backup your database and saved posts
+- **Modular code**: Easy to maintain and extend with separated concerns
 
 ## 🆘 Support
 
 If you encounter issues:
 1. Check `rule34_scraper.log` for error messages
 2. Verify all environment variables are set
-3. Ensure Elasticsearch is running
-4. Confirm API credentials are valid
+3. Confirm API credentials are valid
+4. Check browser console for JavaScript errors
 
 ## 📄 License
 

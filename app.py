@@ -1,13 +1,13 @@
 import os
+import json
 import logging
 from functools import wraps
 from flask import Flask, render_template, request, jsonify, send_from_directory, session, redirect, url_for
-from elasticsearch import Elasticsearch
 
 # Import our modules
 from database import Database
-from api_client import Rule34API
-from post_manager import PostManager
+from api_client import Rule34APIClient
+from file_manager import FileManager
 from scraper import Scraper
 
 # Configure logging
@@ -28,7 +28,7 @@ app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'your-secret-key-change-this
 AUTH_USERNAME = os.environ.get('AUTH_USERNAME', 'admin')
 AUTH_PASSWORD = os.environ.get('AUTH_PASSWORD', 'admin')
 
-# Elasticsearch Configuration
+# Elasticsearch Configuration (optional)
 ES_HOST = "localhost"
 ES_PORT = 9200
 ES_USER = "elastic"
@@ -36,8 +36,10 @@ ES_PASSWORD = "o_UsKFunknykh_hSGBJP"
 ES_CA_CERT = r"D:\elasticsearch-9.2.1-windows-x86_64\elasticsearch-9.2.1\config\certs\http_ca.crt"
 ES_INDEX = "objects"
 
-# Initialize Elasticsearch
+# Initialize Elasticsearch (optional)
+es = None
 try:
+    from elasticsearch import Elasticsearch
     es = Elasticsearch(
         [f"https://{ES_HOST}:{ES_PORT}"],
         basic_auth=(ES_USER, ES_PASSWORD),
@@ -46,17 +48,26 @@ try:
     )
     logger.info("Elasticsearch connection established")
 except Exception as e:
-    logger.error(f"Failed to connect to Elasticsearch: {e}")
-    es = None
+    logger.warning(f"Elasticsearch not available: {e}")
 
 # Initialize modules
 db = Database()
-api_client = Rule34API()
-post_manager = PostManager(db)
-scraper = Scraper(db, api_client, post_manager, es)
+api_client = Rule34APIClient()
+file_manager = FileManager()
+scraper = Scraper(api_client, file_manager, db, es)
 
 # Load configuration on startup
-scraper.load_config()
+def load_startup_config():
+    """Load configuration from database"""
+    api_client.update_credentials(
+        db.load_config("api_user_id", ""),
+        db.load_config("api_key", "")
+    )
+    file_manager.update_paths(
+        db.load_config("temp_path", ""),
+        db.load_config("save_path", "")
+    )
+    logger.info("Startup configuration loaded")
 
 # Authentication decorator
 def login_required(f):
@@ -86,7 +97,9 @@ def logout():
 @app.route("/")
 @login_required
 def index():
-    return render_template("index.html")
+    # Get tag counts for initial load
+    tag_counts = db.get_all_tag_counts()
+    return render_template("index.html", tag_counts=json.dumps(tag_counts))
 
 @app.route("/api/status")
 @login_required
@@ -97,10 +110,43 @@ def get_status():
 @login_required
 def config():
     if request.method == "POST":
-        scraper.save_config(request.json)
+        data = request.json
+        
+        # Save API credentials
+        if "api_user_id" in data:
+            db.save_config("api_user_id", data["api_user_id"])
+        if "api_key" in data:
+            db.save_config("api_key", data["api_key"])
+        
+        # Save paths
+        if "temp_path" in data:
+            db.save_config("temp_path", data["temp_path"])
+        if "save_path" in data:
+            db.save_config("save_path", data["save_path"])
+        
+        # Save blacklist
+        if "blacklist" in data:
+            db.save_config("blacklist", json.dumps(data["blacklist"]))
+        
+        # Update modules with new config
+        api_client.update_credentials(
+            data.get("api_user_id", api_client.user_id),
+            data.get("api_key", api_client.api_key)
+        )
+        file_manager.update_paths(
+            data.get("temp_path", file_manager.temp_path),
+            data.get("save_path", file_manager.save_path)
+        )
+        
         return jsonify({"success": True})
     else:
-        return jsonify(scraper.config)
+        return jsonify({
+            "api_user_id": db.load_config("api_user_id", ""),
+            "api_key": db.load_config("api_key", ""),
+            "temp_path": db.load_config("temp_path", ""),
+            "save_path": db.load_config("save_path", ""),
+            "blacklist": json.loads(db.load_config("blacklist", "[]"))
+        })
 
 @app.route("/api/search_history")
 @login_required
@@ -124,110 +170,145 @@ def get_tag_counts():
 @login_required
 def rebuild_tag_counts():
     """Rebuild tag counts from all posts"""
-    all_posts = post_manager.get_all_posts()
-    db.rebuild_tag_counts(all_posts)
-    return jsonify({"success": True, "total_posts": len(all_posts)})
+    db.rebuild_tag_counts(file_manager.temp_path, file_manager.save_path)
+    return jsonify({"success": True})
 
 @app.route("/api/start", methods=["POST"])
 @login_required
 def start_scraper():
     data = request.json
     tags = data.get("tags", "")
-    result = scraper.start(tags)
-    if "error" in result:
-        return jsonify(result), 400
-    return jsonify(result)
+    
+    if scraper.start(tags):
+        return jsonify({"success": True})
+    else:
+        return jsonify({"error": "Failed to start scraper"}), 400
 
 @app.route("/api/stop", methods=["POST"])
 @login_required
 def stop_scraper():
-    return jsonify(scraper.stop())
+    scraper.stop()
+    return jsonify({"success": True})
 
 @app.route("/api/posts")
 @login_required
 def get_posts():
-    """Get posts based on filter parameter"""
-    filter_type = request.args.get('filter', 'all')  # 'pending', 'saved', or 'all'
+    """Get posts with optional filter (pending/saved/all)"""
+    filter_type = request.args.get('filter', 'all')
     
     if filter_type == 'pending':
-        posts = post_manager.get_pending_posts()
+        posts = file_manager.get_pending_posts()
     elif filter_type == 'saved':
-        posts = post_manager.get_saved_posts()
-    else:  # 'all'
-        posts = post_manager.get_all_posts()
+        posts = file_manager.get_saved_posts()
+    else:  # all
+        posts = file_manager.get_all_posts()
     
     return jsonify(posts)
 
 @app.route("/api/pending")
 @login_required
 def get_pending():
-    """Backward compatibility endpoint"""
-    return jsonify(post_manager.get_pending_posts())
+    """Legacy endpoint - get pending posts"""
+    return jsonify(file_manager.get_pending_posts())
 
 @app.route("/api/saved")
 @login_required
 def get_saved():
-    """Backward compatibility endpoint"""
-    return jsonify(post_manager.get_saved_posts())
+    """Legacy endpoint - get saved posts"""
+    return jsonify(file_manager.get_saved_posts())
 
-@app.route("/api/save/<post_id>", methods=["POST"])
+@app.route("/api/save/<int:post_id>", methods=["POST"])
 @login_required
 def save_post(post_id):
-    result = post_manager.save_post(int(post_id))
-    if "error" in result:
-        return jsonify(result), 404
-    scraper.state["total_saved"] += 1
-    return jsonify(result)
+    if file_manager.save_post_to_archive(post_id):
+        db.set_post_status(post_id, "saved")
+        
+        # Update scraper stats
+        with scraper.lock:
+            scraper.state["total_saved"] += 1
+        
+        return jsonify({"success": True})
+    else:
+        return jsonify({"error": "Failed to save post"}), 500
 
-@app.route("/api/discard/<post_id>", methods=["POST"])
+@app.route("/api/discard/<int:post_id>", methods=["POST"])
 @login_required
 def discard_post(post_id):
-    result = post_manager.discard_post(int(post_id))
-    if "error" in result:
-        return jsonify(result), 404
-    scraper.state["total_discarded"] += 1
-    return jsonify(result)
+    # Get post data before discarding to update tag counts
+    post_data = file_manager.load_post_json(post_id, file_manager.temp_path)
+    
+    if file_manager.discard_post(post_id):
+        db.set_post_status(post_id, "discarded")
+        
+        # Update tag counts
+        if post_data and 'tags' in post_data:
+            db.update_tag_counts(post_data['tags'], increment=False)
+        
+        # Update scraper stats
+        with scraper.lock:
+            scraper.state["total_discarded"] += 1
+        
+        return jsonify({"success": True})
+    else:
+        return jsonify({"error": "Failed to discard post"}), 500
 
-@app.route("/api/delete/<post_id>", methods=["POST"])
+@app.route("/api/delete/<int:post_id>", methods=["POST"])
 @login_required
 def delete_saved_post(post_id):
-    """Delete a saved post permanently"""
-    result = post_manager.delete_saved_post(int(post_id))
-    if "error" in result:
-        return jsonify(result), 404
-    return jsonify(result)
+    """Delete a saved post"""
+    data = request.json
+    date_folder = data.get('date_folder')
+    
+    if not date_folder:
+        return jsonify({"error": "date_folder required"}), 400
+    
+    # Get post data before deleting to update tag counts
+    folder_path = os.path.join(file_manager.save_path, date_folder)
+    post_data = file_manager.load_post_json(post_id, folder_path)
+    
+    if file_manager.delete_saved_post(post_id, date_folder):
+        # Update tag counts
+        if post_data and 'tags' in post_data:
+            db.update_tag_counts(post_data['tags'], increment=False)
+        
+        return jsonify({"success": True})
+    else:
+        return jsonify({"error": "Failed to delete post"}), 500
 
-@app.route("/api/post/<post_id>/size")
+@app.route("/api/post/<int:post_id>/size")
 @login_required
 def get_post_size(post_id):
-    size = post_manager.get_post_size(int(post_id))
+    size = file_manager.get_file_size(post_id)
     return jsonify({"size": size})
 
 @app.route("/api/autocomplete")
 @login_required
 def autocomplete_tags():
     query = request.args.get('q', '')
-    return jsonify(api_client.autocomplete_tags(query))
+    suggestions = api_client.get_autocomplete_tags(query)
+    return jsonify(suggestions)
 
 @app.route("/temp/<path:filename>")
 @login_required
 def serve_temp(filename):
-    temp_path = scraper.config.get("temp_path", "")
-    return send_from_directory(temp_path, filename)
+    return send_from_directory(file_manager.temp_path, filename)
 
 @app.route("/saved/<date_folder>/<path:filename>")
 @login_required
 def serve_saved(date_folder, filename):
-    save_path = scraper.config.get("save_path", "")
-    folder_path = os.path.join(save_path, date_folder)
+    folder_path = os.path.join(file_manager.save_path, date_folder)
     return send_from_directory(folder_path, filename)
 
 if __name__ == "__main__":
+    load_startup_config()
+    
     logger.info("=" * 60)
     logger.info("Rule34 Scraper Starting")
     logger.info(f"Auth: {AUTH_USERNAME} (set via AUTH_USERNAME env var)")
-    logger.info(f"Network access enabled on: 0.0.0.0:5000")
+    logger.info(f"Access from network: http://0.0.0.0:5000")
     logger.info("=" * 60)
     
-    # Run on all network interfaces to allow LAN access
+    # Rebuild tag counts on startup (optional - can be slow)
+    # db.rebuild_tag_counts(file_manager.temp_path, file_manager.save_path)
+    
     app.run(debug=True, host="0.0.0.0", port=5000)

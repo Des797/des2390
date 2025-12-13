@@ -13,10 +13,9 @@
 
             <div class="nav-tabs">
                 <div class="nav-tab active" data-tab="scraper">Scraper</div>
-                <div class="nav-tab internet-required" data-tab="pending">Pending Posts</div>
-                <div class="nav-tab internet-required" data-tab="saved">Saved Posts</div>
+                <div class="nav-tab" data-tab="posts">Posts</div>
                 <div class="nav-tab" data-tab="blacklist">Blacklist</div>
-                <div class="nav-tab internet-required" data-tab="taghistory">Tag History</div>
+                <div class="nav-tab" data-tab="taghistory">Tag History</div>
             </div>
 
             <!-- SCRAPER TAB -->
@@ -44,11 +43,11 @@
 
                 <div class="search-controls">
                     <div class="search-input-wrapper">
-                        <input type="text" id="searchTags" class="internet-required" placeholder="Enter tags (use * for wildcards, ~ for OR, - for exclude)">
+                        <input type="text" id="searchTags" placeholder="Enter tags (use * for wildcards, ~ for OR, - for exclude)">
                         <div class="search-dropdown" id="searchDropdown"></div>
                     </div>
-                    <button class="btn-primary internet-required" id="startBtn">▶️ Start</button>
-                    <button class="btn-danger internet-required" id="stopBtn" disabled>⏹️ Stop</button>
+                    <button class="btn-primary" id="startBtn">▶️ Start</button>
+                    <button class="btn-danger" id="stopBtn" disabled>⏹️ Stop</button>
                 </div>
 
                 <div class="stats">
@@ -82,39 +81,44 @@
                 <div class="alert alert-warning" id="storageAlert"></div>
             </div>
 
-            <!-- PENDING POSTS TAB -->
-            <div id="pendingTab" class="tab-content">
-                <div class="bulk-controls" id="pendingBulkControls" style="display: none;">
+            <!-- POSTS TAB (MERGED) -->
+            <div id="postsTab" class="tab-content">
+                <div class="bulk-controls" id="postsBulkControls" style="display: none;">
                     <div class="bulk-controls-header">
                         <h3>Bulk Actions</h3>
-                        <span class="selection-count" id="pendingSelectionCount">0 selected</span>
+                        <span class="selection-count" id="postsSelectionCount">0 selected</span>
                     </div>
                     <div class="bulk-actions">
-                        <button class="btn-success" id="bulkSavePending">💾 Save Selected</button>
-                        <button class="btn-danger" id="bulkDiscardPending">🗑️ Discard Selected</button>
+                        <button class="btn-success" id="bulkSavePosts">💾 Save Selected</button>
+                        <button class="btn-danger" id="bulkDiscardPosts">🗑️ Discard Selected</button>
+                        <button class="btn-danger" id="bulkDeletePosts">🗑️ Delete Selected</button>
                         <button class="btn-warning greyed-out" disabled title="API not supported">❤️ Like Selected</button>
                         <button class="btn-primary greyed-out" disabled title="API not supported">✏️ Edit Tags</button>
-                        <button class="btn-secondary" id="clearSelectionPending">Clear Selection</button>
+                        <button class="btn-secondary" id="clearSelectionPosts">Clear Selection</button>
                     </div>
-                    <div class="bulk-progress" id="pendingBulkProgress">
+                    <div class="bulk-progress" id="postsBulkProgress">
                         <div class="progress-bar-container">
-                            <div class="progress-bar" id="pendingProgressBar">0%</div>
+                            <div class="progress-bar" id="postsProgressBar">0%</div>
                         </div>
                         <div class="progress-info">
-                            <span id="pendingProgressText">Processing...</span>
-                            <button class="btn-danger" id="cancelBulkPending">Cancel</button>
+                            <span id="postsProgressText">Processing...</span>
+                            <button class="btn-danger" id="cancelBulkPosts">Cancel</button>
                         </div>
                     </div>
                 </div>
 
                 <div class="gallery">
                     <div class="gallery-header">
-                        <h2>📷 Pending Posts</h2>
+                        <h2>📷 Posts</h2>
                         <div class="gallery-controls">
-                            <div id="pendingFilter"></div>
-                            <span class="total-results" id="pendingTotalResults"></span>
-                            <input type="text" id="pendingSearchInput" placeholder="Search (tags, owner:name, score:>50)">
-                            <select id="pendingSort">
+                            <select id="postsStatusFilter">
+                                <option value="all">All Posts</option>
+                                <option value="pending">Pending Only</option>
+                                <option value="saved">Saved Only</option>
+                            </select>
+                            <span class="total-results" id="postsTotalResults"></span>
+                            <input type="text" id="postsSearchInput" placeholder="Search (tags, owner:name, score:>50)">
+                            <select id="postsSort">
                                 <option value="download-desc">Download Date ↓</option>
                                 <option value="download-asc">Download Date ↑</option>
                                 <option value="upload-desc">Upload Date ↓</option>
@@ -128,7 +132,7 @@
                                 <option value="size-desc">File Size ↓</option>
                                 <option value="size-asc">File Size ↑</option>
                             </select>
-                            <select id="pendingPerPage">
+                            <select id="postsPerPage">
                                 <option value="12">12 per page</option>
                                 <option value="24" selected>24 per page</option>
                                 <option value="48">48 per page</option>
@@ -136,66 +140,8 @@
                             </select>
                         </div>
                     </div>
-                    <div class="gallery-grid" id="pendingGrid"></div>
-                    <div class="pagination" id="pendingPagination"></div>
-                </div>
-            </div>
-
-            <!-- SAVED POSTS TAB -->
-            <div id="savedTab" class="tab-content">
-                <div class="bulk-controls" id="savedBulkControls" style="display: none;">
-                    <div class="bulk-controls-header">
-                        <h3>Bulk Actions</h3>
-                        <span class="selection-count" id="savedSelectionCount">0 selected</span>
-                    </div>
-                    <div class="bulk-actions">
-                        <button class="btn-danger" id="bulkDeleteSaved">🗑️ Delete Selected</button>
-                        <button class="btn-warning greyed-out" disabled title="API not supported">❤️ Like Selected</button>
-                        <button class="btn-primary greyed-out" disabled title="API not supported">✏️ Edit Tags</button>
-                        <button class="btn-secondary" id="clearSelectionSaved">Clear Selection</button>
-                    </div>
-                    <div class="bulk-progress" id="savedBulkProgress">
-                        <div class="progress-bar-container">
-                            <div class="progress-bar" id="savedProgressBar">0%</div>
-                        </div>
-                        <div class="progress-info">
-                            <span id="savedProgressText">Processing...</span>
-                            <button class="btn-danger" id="cancelBulkSaved">Cancel</button>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="gallery">
-                    <div class="gallery-header">
-                        <h2>💾 Saved Posts</h2>
-                        <div class="gallery-controls">
-                            <div id="savedFilter"></div>
-                            <span class="total-results" id="savedTotalResults"></span>
-                            <input type="text" id="savedSearchInput" placeholder="Search (tags, owner:name, score:>50)">
-                            <select id="savedSort">
-                                <option value="download-desc">Download Date ↓</option>
-                                <option value="download-asc">Download Date ↑</option>
-                                <option value="upload-desc">Upload Date ↓</option>
-                                <option value="upload-asc">Upload Date ↑</option>
-                                <option value="id-desc">ID ↓</option>
-                                <option value="id-asc">ID ↑</option>
-                                <option value="score-desc">Score ↓</option>
-                                <option value="score-asc">Score ↑</option>
-                                <option value="tags-desc">Tag Count ↓</option>
-                                <option value="tags-asc">Tag Count ↑</option>
-                                <option value="size-desc">File Size ↓</option>
-                                <option value="size-asc">File Size ↑</option>
-                            </select>
-                            <select id="savedPerPage">
-                                <option value="12">12 per page</option>
-                                <option value="24" selected>24 per page</option>
-                                <option value="48">48 per page</option>
-                                <option value="96">96 per page</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="gallery-grid" id="savedGrid"></div>
-                    <div class="pagination" id="savedPagination"></div>
+                    <div class="gallery-grid" id="postsGrid"></div>
+                    <div class="pagination" id="postsPagination"></div>
                 </div>
             </div>
 
@@ -255,13 +201,10 @@ Examples: frog red_* *_dress"></textarea>
         <span id="notificationText"></span>
     </div>
 
-    <!-- Connection status indicator -->
-    <div id="connectionStatus" style="display: none; position: fixed; top: 10px; right: 10px; background: #ef4444; color: white; padding: 8px 12px; border-radius: 6px; font-size: 12px; z-index: 1001;">
-        🔴 Offline
-    </div>
-
-    <script src="/static/js/utils.js"></script>
-    <script src="/static/js/navigation.js"></script>
-    <script src="/static/js/app.js"></script>
+    <script>
+        // Pass tag counts to JavaScript
+        window.tagCounts = {{ tag_counts|safe }};
+    </script>
+    <script type="module" src="/static/js/main.js"></script>
 </body>
 </html>
