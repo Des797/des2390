@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rule34 Scraper</title>
+    <link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1><span>🎨</span> Rule34 Scraper</h1>
+
+            <div class="nav-tabs">
+                <div class="nav-tab active" data-tab="scraper">Scraper</div>
+                <div class="nav-tab" data-tab="pending">Pending Posts</div>
+                <div class="nav-tab" data-tab="saved">Saved Posts</div>
+                <div class="nav-tab" data-tab="blacklist">Blacklist</div>
+                <div class="nav-tab" data-tab="taghistory">Tag History</div>
+            </div>
+
+            <!-- SCRAPER TAB -->
+            <div id="scraperTab" class="tab-content active">
+                <div class="config-section">
+                    <div class="input-group">
+                        <label>User ID</label>
+                        <input type="text" id="userId" placeholder="Enter your user ID">
+                    </div>
+                    <div class="input-group">
+                        <label>API Key</label>
+                        <input type="password" id="apiKey" placeholder="Enter your API key">
+                    </div>
+                    <div class="input-group">
+                        <label>Temp Path</label>
+                        <input type="text" id="tempPath" placeholder="e.g., C:\Temp\Rule34">
+                    </div>
+                    <div class="input-group">
+                        <label>Save Path</label>
+                        <input type="text" id="savePath" placeholder="e.g., C:\Downloads\Rule34">
+                    </div>
+                </div>
+
+                <button class="btn-primary" id="saveConfigBtn">💾 Save Configuration</button>
+
+                <div class="search-controls">
+                    <div class="search-input-wrapper">
+                        <input type="text" id="searchTags" placeholder="Enter tags (use * for wildcards, ~ for OR, - for exclude)">
+                        <div class="search-dropdown" id="searchDropdown"></div>
+                    </div>
+                    <button class="btn-primary" id="startBtn">▶️ Start</button>
+                    <button class="btn-danger" id="stopBtn" disabled>⏹️ Stop</button>
+                </div>
+
+                <div class="stats">
+                    <div class="stat-card">
+                        <div class="stat-label">Processed</div>
+                        <div class="stat-value" id="statProcessed">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Saved</div>
+                        <div class="stat-value" id="statSaved">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Discarded</div>
+                        <div class="stat-value" id="statDiscarded">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Skipped</div>
+                        <div class="stat-value" id="statSkipped">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Requests/Min</div>
+                        <div class="stat-value" id="statRequests">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-label">Current Page</div>
+                        <div class="stat-value" id="statPage">0</div>
+                    </div>
+                </div>
+
+                <div class="alert alert-info" id="modeAlert"></div>
+                <div class="alert alert-warning" id="storageAlert"></div>
+            </div>
+
+            <!-- PENDING POSTS TAB -->
+            <div id="pendingTab" class="tab-content">
+                <div class="bulk-controls" id="pendingBulkControls" style="display: none;">
+                    <div class="bulk-controls-header">
+                        <h3>Bulk Actions</h3>
+                        <span class="selection-count" id="pendingSelectionCount">0 selected</span>
+                    </div>
+                    <div class="bulk-actions">
+                        <button class="btn-success" id="bulkSavePending">💾 Save Selected</button>
+                        <button class="btn-danger" id="bulkDiscardPending">🗑️ Discard Selected</button>
+                        <button class="btn-warning greyed-out" disabled title="API not supported">❤️ Like Selected</button>
+                        <button class="btn-primary greyed-out" disabled title="API not supported">✏️ Edit Tags</button>
+                        <button class="btn-secondary" id="clearSelectionPending">Clear Selection</button>
+                    </div>
+                    <div class="bulk-progress" id="pendingBulkProgress">
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" id="pendingProgressBar">0%</div>
+                        </div>
+                        <div class="progress-info">
+                            <span id="pendingProgressText">Processing...</span>
+                            <button class="btn-danger" id="cancelBulkPending">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="gallery">
+                    <div class="gallery-header">
+                        <h2>📷 Pending Posts</h2>
+                        <div class="gallery-controls">
+                            <div id="pendingFilter"></div>
+                            <span class="total-results" id="pendingTotalResults"></span>
+                            <input type="text" id="pendingSearchInput" placeholder="Search (tags, owner:name, score:>50)">
+                            <select id="pendingSort">
+                                <option value="download-desc">Download Date ↓</option>
+                                <option value="download-asc">Download Date ↑</option>
+                                <option value="upload-desc">Upload Date ↓</option>
+                                <option value="upload-asc">Upload Date ↑</option>
+                                <option value="id-desc">ID ↓</option>
+                                <option value="id-asc">ID ↑</option>
+                                <option value="score-desc">Score ↓</option>
+                                <option value="score-asc">Score ↑</option>
+                                <option value="tags-desc">Tag Count ↓</option>
+                                <option value="tags-asc">Tag Count ↑</option>
+                                <option value="size-desc">File Size ↓</option>
+                                <option value="size-asc">File Size ↑</option>
+                            </select>
+                            <select id="pendingPerPage">
+                                <option value="12">12 per page</option>
+                                <option value="24" selected>24 per page</option>
+                                <option value="48">48 per page</option>
+                                <option value="96">96 per page</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="gallery-grid" id="pendingGrid"></div>
+                    <div class="pagination" id="pendingPagination"></div>
+                </div>
+            </div>
+
+            <!-- SAVED POSTS TAB -->
+            <div id="savedTab" class="tab-content">
+                <div class="bulk-controls" id="savedBulkControls" style="display: none;">
+                    <div class="bulk-controls-header">
+                        <h3>Bulk Actions</h3>
+                        <span class="selection-count" id="savedSelectionCount">0 selected</span>
+                    </div>
+                    <div class="bulk-actions">
+                        <button class="btn-danger" id="bulkDeleteSaved">🗑️ Delete Selected</button>
+                        <button class="btn-warning greyed-out" disabled title="API not supported">❤️ Like Selected</button>
+                        <button class="btn-primary greyed-out" disabled title="API not supported">✏️ Edit Tags</button>
+                        <button class="btn-secondary" id="clearSelectionSaved">Clear Selection</button>
+                    </div>
+                    <div class="bulk-progress" id="savedBulkProgress">
+                        <div class="progress-bar-container">
+                            <div class="progress-bar" id="savedProgressBar">0%</div>
+                        </div>
+                        <div class="progress-info">
+                            <span id="savedProgressText">Processing...</span>
+                            <button class="btn-danger" id="cancelBulkSaved">Cancel</button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="gallery">
+                    <div class="gallery-header">
+                        <h2>💾 Saved Posts</h2>
+                        <div class="gallery-controls">
+                            <div id="savedFilter"></div>
+                            <span class="total-results" id="savedTotalResults"></span>
+                            <input type="text" id="savedSearchInput" placeholder="Search (tags, owner:name, score:>50)">
+                            <select id="savedSort">
+                                <option value="download-desc">Download Date ↓</option>
+                                <option value="download-asc">Download Date ↑</option>
+                                <option value="upload-desc">Upload Date ↓</option>
+                                <option value="upload-asc">Upload Date ↑</option>
+                                <option value="id-desc">ID ↓</option>
+                                <option value="id-asc">ID ↑</option>
+                                <option value="score-desc">Score ↓</option>
+                                <option value="score-asc">Score ↑</option>
+                                <option value="tags-desc">Tag Count ↓</option>
+                                <option value="tags-asc">Tag Count ↑</option>
+                                <option value="size-desc">File Size ↓</option>
+                                <option value="size-asc">File Size ↑</option>
+                            </select>
+                            <select id="savedPerPage">
+                                <option value="12">12 per page</option>
+                                <option value="24" selected>24 per page</option>
+                                <option value="48">48 per page</option>
+                                <option value="96">96 per page</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="gallery-grid" id="savedGrid"></div>
+                    <div class="pagination" id="savedPagination"></div>
+                </div>
+            </div>
+
+            <!-- BLACKLIST TAB -->
+            <div id="blacklistTab" class="tab-content">
+                <div class="blacklist-section">
+                    <h3>🚫 Blacklisted Tags</h3>
+                    <div class="blacklist-hint">
+                        Add tags separated by spaces or commas. Wildcards supported (e.g., red_* or *_girl)
+                    </div>
+                    <div class="blacklist-input">
+                        <textarea id="blacklistInput" placeholder="Enter tags to blacklist (space or comma separated)
+Examples: frog red_* *_dress"></textarea>
+                        <button class="btn-danger" id="addBlacklistBtn">Add</button>
+                    </div>
+                    <div class="blacklist-tags" id="blacklistTags"></div>
+                </div>
+            </div>
+
+            <!-- TAG HISTORY TAB -->
+            <div id="taghistoryTab" class="tab-content">
+                <div class="gallery">
+                    <div class="gallery-header">
+                        <h2>📝 Tag Edit History</h2>
+                        <div class="gallery-controls">
+                            <span class="total-results" id="tagHistoryTotal"></span>
+                            <select id="tagHistoryPerPage">
+                                <option value="20">20 per page</option>
+                                <option value="50" selected>50 per page</option>
+                                <option value="100">100 per page</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="tag-history-list" id="tagHistoryList"></div>
+                    <div class="pagination" id="tagHistoryPagination"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL -->
+    <div class="modal" id="imageModal">
+        <div class="modal-close" id="modalClose">×</div>
+        <div class="modal-content">
+            <div class="modal-media-container">
+                <div class="modal-nav prev" id="modalPrev">‹</div>
+                <img id="modalImage" class="modal-media" style="display: none;">
+                <video id="modalVideo" class="modal-media" controls style="display: none;"></video>
+                <div class="modal-nav next" id="modalNext">›</div>
+            </div>
+            <div class="modal-info" id="modalInfo"></div>
+        </div>
+    </div>
+
+    <!-- NOTIFICATIONS -->
+    <div class="notification" id="notification">
+        <span id="notificationText"></span>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
