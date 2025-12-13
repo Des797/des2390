@@ -188,6 +188,40 @@ button.greyed-out {
     opacity: 0.6;
 }
 
+/* Offline mode styles */
+.internet-required:disabled,
+.internet-required.offline {
+    opacity: 0.4;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+#offlineIndicator {
+    color: #ef4444;
+    font-weight: bold;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+#connectionStatus {
+    animation: slideIn 0.3s ease-out;
+}
+
+@keyframes slideIn {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
 /* Search Controls */
 .search-controls {
     display: flex;

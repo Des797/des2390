@@ -1,0 +1,249 @@
+import os
+import json
+import shutil
+import logging
+from pathlib import Path
+from datetime import datetime
+from typing import List, Dict, Any, Optional
+
+logger = logging.getLogger(__name__)
+
+class FileManager:
+    """Manages file operations for posts"""
+    
+    def __init__(self, temp_path: str = "", save_path: str = ""):
+        self.temp_path = temp_path
+        self.save_path = save_path
+    
+    def update_paths(self, temp_path: str, save_path: str):
+        """Update file paths"""
+        self.temp_path = temp_path
+        self.save_path = save_path
+        logger.info(f"Paths updated - Temp: {temp_path}, Save: {save_path}")
+    
+    def check_storage(self, path: str, min_gb: float = 5) -> bool:
+        """Check if storage has minimum free space"""
+        try:
+            if not path or not os.path.exists(path):
+                return True
+            
+            total, used, free = shutil.disk_usage(path)
+            free_gb = free / (1024**3)
+            logger.debug(f"Storage check for {path}: {free_gb:.2f} GB free")
+            return free_gb > min_gb
+        except Exception as e:
+            logger.error(f"Storage check failed: {e}")
+            return True
+    
+    def ensure_directory(self, path: str):
+        """Ensure directory exists"""
+        os.makedirs(path, exist_ok=True)
+    
+    def save_post_json(self, post_data: Dict[str, Any], directory: str):
+        """Save post metadata as JSON"""
+        post_id = post_data['id']
+        json_path = os.path.join(directory, f"{post_id}.json")
+        
+        with open(json_path, 'w') as f:
+            json.dump(post_data, f, indent=2)
+        
+        logger.debug(f"Saved JSON for post {post_id}")
+    
+    def load_post_json(self, post_id: int, directory: str) -> Optional[Dict[str, Any]]:
+        """Load post metadata from JSON"""
+        json_path = os.path.join(directory, f"{post_id}.json")
+        
+        if not os.path.exists(json_path):
+            return None
+        
+        try:
+            with open(json_path, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            logger.error(f"Failed to load JSON for post {post_id}: {e}")
+            return None
+    
+    def get_pending_posts(self) -> List[Dict[str, Any]]:
+        """Get all pending posts from temp directory"""
+        if not self.temp_path or not os.path.exists(self.temp_path):
+            return []
+        
+        pending = []
+        for filename in os.listdir(self.temp_path):
+            if filename.endswith(".json"):
+                json_path = os.path.join(self.temp_path, filename)
+                try:
+                    with open(json_path, 'r') as f:
+                        post_data = json.load(f)
+                        post_data['timestamp'] = os.path.getmtime(json_path)
+                        post_data['status'] = 'pending'
+                        pending.append(post_data)
+                except Exception as e:
+                    logger.error(f"Failed to load pending post {filename}: {e}")
+        
+        return pending
+    
+    def get_saved_posts(self) -> List[Dict[str, Any]]:
+        """Get all saved posts from save directory"""
+        if not self.save_path or not os.path.exists(self.save_path):
+            return []
+        
+        saved = []
+        for date_folder in os.listdir(self.save_path):
+            folder_path = os.path.join(self.save_path, date_folder)
+            if not os.path.isdir(folder_path):
+                continue
+            
+            for filename in os.listdir(folder_path):
+                if filename.endswith(".json"):
+                    json_path = os.path.join(folder_path, filename)
+                    try:
+                        with open(json_path, 'r') as f:
+                            post_data = json.load(f)
+                            post_data['timestamp'] = os.path.getmtime(json_path)
+                            post_data['date_folder'] = date_folder
+                            post_data['status'] = 'saved'
+                            
+                            # Ensure file_path is set
+                            post_id = post_data['id']
+                            file_ext = post_data.get('file_type', '.jpg')
+                            post_data['file_path'] = os.path.join(folder_path, f"{post_id}{file_ext}")
+                            
+                            saved.append(post_data)
+                    except Exception as e:
+                        logger.error(f"Failed to load saved post {filename}: {e}")
+        
+        return saved
+    
+    def get_all_posts(self) -> List[Dict[str, Any]]:
+        """Get all posts (pending + saved)"""
+        return self.get_pending_posts() + self.get_saved_posts()
+    
+    def save_post_to_archive(self, post_id: int) -> bool:
+        """Move post from temp to save directory"""
+        if not self.temp_path or not self.save_path:
+            logger.error("Paths not configured")
+            return False
+        
+        json_path = os.path.join(self.temp_path, f"{post_id}.json")
+        if not os.path.exists(json_path):
+            logger.error(f"Post {post_id} not found in temp")
+            return False
+        
+        try:
+            # Load post data
+            with open(json_path, 'r') as f:
+                post_data = json.load(f)
+            
+            # Create date folder
+            date_folder = datetime.now().strftime("%m.%d.%Y")
+            target_dir = os.path.join(self.save_path, date_folder)
+            self.ensure_directory(target_dir)
+            
+            # Move files
+            file_path = post_data["file_path"]
+            if os.path.exists(file_path):
+                file_ext = post_data.get('file_type', os.path.splitext(file_path)[1])
+                target_file = os.path.join(target_dir, f"{post_id}{file_ext}")
+                target_json = os.path.join(target_dir, f"{post_id}.json")
+                
+                shutil.move(file_path, target_file)
+                shutil.move(json_path, target_json)
+                
+                logger.info(f"Saved post {post_id} to {date_folder}")
+                return True
+            else:
+                logger.error(f"File not found for post {post_id}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Failed to save post {post_id}: {e}")
+            return False
+    
+    def discard_post(self, post_id: int) -> bool:
+        """Delete post from temp directory"""
+        if not self.temp_path:
+            logger.error("Temp path not configured")
+            return False
+        
+        json_path = os.path.join(self.temp_path, f"{post_id}.json")
+        if not os.path.exists(json_path):
+            logger.error(f"Post {post_id} not found")
+            return False
+        
+        try:
+            # Load post data to get file path
+            with open(json_path, 'r') as f:
+                post_data = json.load(f)
+            
+            # Delete media file
+            file_path = post_data.get("file_path")
+            if file_path and os.path.exists(file_path):
+                os.remove(file_path)
+            
+            # Delete JSON
+            os.remove(json_path)
+            
+            logger.info(f"Discarded post {post_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to discard post {post_id}: {e}")
+            return False
+    
+    def delete_saved_post(self, post_id: int, date_folder: str) -> bool:
+        """Delete post from save directory"""
+        if not self.save_path:
+            logger.error("Save path not configured")
+            return False
+        
+        folder_path = os.path.join(self.save_path, date_folder)
+        json_path = os.path.join(folder_path, f"{post_id}.json")
+        
+        if not os.path.exists(json_path):
+            logger.error(f"Post {post_id} not found in {date_folder}")
+            return False
+        
+        try:
+            # Load post data
+            with open(json_path, 'r') as f:
+                post_data = json.load(f)
+            
+            # Delete media file
+            file_ext = post_data.get('file_type', '.jpg')
+            file_path = os.path.join(folder_path, f"{post_id}{file_ext}")
+            if os.path.exists(file_path):
+                os.remove(file_path)
+            
+            # Delete JSON
+            os.remove(json_path)
+            
+            logger.info(f"Deleted saved post {post_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to delete saved post {post_id}: {e}")
+            return False
+    
+    def get_file_size(self, post_id: int) -> int:
+        """Get file size for a post"""
+        # Check temp directory
+        if self.temp_path and os.path.exists(self.temp_path):
+            for filename in os.listdir(self.temp_path):
+                if filename.startswith(str(post_id)) and not filename.endswith('.json'):
+                    file_path = os.path.join(self.temp_path, filename)
+                    return os.path.getsize(file_path)
+        
+        # Check save directory
+        if self.save_path and os.path.exists(self.save_path):
+            for date_folder in os.listdir(self.save_path):
+                folder_path = os.path.join(self.save_path, date_folder)
+                if not os.path.isdir(folder_path):
+                    continue
+                
+                for filename in os.listdir(folder_path):
+                    if filename.startswith(str(post_id)) and not filename.endswith('.json'):
+                        file_path = os.path.join(folder_path, filename)
+                        return os.path.getsize(file_path)
+        
+        return 0

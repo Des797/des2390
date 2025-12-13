@@ -13,10 +13,10 @@
 
             <div class="nav-tabs">
                 <div class="nav-tab active" data-tab="scraper">Scraper</div>
-                <div class="nav-tab" data-tab="pending">Pending Posts</div>
-                <div class="nav-tab" data-tab="saved">Saved Posts</div>
+                <div class="nav-tab internet-required" data-tab="pending">Pending Posts</div>
+                <div class="nav-tab internet-required" data-tab="saved">Saved Posts</div>
                 <div class="nav-tab" data-tab="blacklist">Blacklist</div>
-                <div class="nav-tab" data-tab="taghistory">Tag History</div>
+                <div class="nav-tab internet-required" data-tab="taghistory">Tag History</div>
             </div>
 
             <!-- SCRAPER TAB -->
@@ -44,11 +44,11 @@
 
                 <div class="search-controls">
                     <div class="search-input-wrapper">
-                        <input type="text" id="searchTags" placeholder="Enter tags (use * for wildcards, ~ for OR, - for exclude)">
+                        <input type="text" id="searchTags" class="internet-required" placeholder="Enter tags (use * for wildcards, ~ for OR, - for exclude)">
                         <div class="search-dropdown" id="searchDropdown"></div>
                     </div>
-                    <button class="btn-primary" id="startBtn">▶️ Start</button>
-                    <button class="btn-danger" id="stopBtn" disabled>⏹️ Stop</button>
+                    <button class="btn-primary internet-required" id="startBtn">▶️ Start</button>
+                    <button class="btn-danger internet-required" id="stopBtn" disabled>⏹️ Stop</button>
                 </div>
 
                 <div class="stats">
@@ -255,6 +255,13 @@ Examples: frog red_* *_dress"></textarea>
         <span id="notificationText"></span>
     </div>
 
+    <!-- Connection status indicator -->
+    <div id="connectionStatus" style="display: none; position: fixed; top: 10px; right: 10px; background: #ef4444; color: white; padding: 8px 12px; border-radius: 6px; font-size: 12px; z-index: 1001;">
+        🔴 Offline
+    </div>
+
+    <script src="/static/js/utils.js"></script>
+    <script src="/static/js/navigation.js"></script>
     <script src="/static/js/app.js"></script>
 </body>
 </html>

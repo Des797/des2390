@@ -17,23 +17,31 @@ const state = {
     selectedPending: new Set(),
     selectedSaved: new Set(),
     bulkOperationActive: false,
-    postSizes: {}
+    postSizes: {},
+    isOnline: true
 };
+
+// Make state globally accessible
+window.appState = state;
 
 // Utility Functions
 function showNotification(message, type = 'success') {
-    const notification = document.getElementById('notification');
-    const text = document.getElementById('notificationText');
-    
-    notification.className = 'notification show';
-    if (type === 'error') notification.classList.add('error');
-    if (type === 'warning') notification.classList.add('warning');
-    
-    text.textContent = message;
-    
-    setTimeout(() => {
-        notification.classList.remove('show');
-    }, 3000);
+    if (window.utils && window.utils.showNotification) {
+        window.utils.showNotification(message, type);
+    } else {
+        const notification = document.getElementById('notification');
+        const text = document.getElementById('notificationText');
+        
+        notification.className = 'notification show';
+        if (type === 'error') notification.classList.add('error');
+        if (type === 'warning') notification.classList.add('warning');
+        
+        text.textContent = message;
+        
+        setTimeout(() => {
+            notification.classList.remove('show');
+        }, 3000);
+    }
 }
 
 function formatBytes(bytes) {
@@ -494,6 +502,9 @@ async function loadSaved() {
     }
 }
 
+// Make functions globally accessible
+window.loadPending = loadPending;
+window.loadSaved = loadSaved;
 // Event Listeners for Posts
 function attachPostEventListeners(source) {
     // Select checkboxes
@@ -757,19 +768,21 @@ function displayModalPost(post, source) {
         img.src = mediaUrl;
     }
     
-    const tagsHtml = post.tags.map(t => 
-        `<span class="tag" data-tag="${t}">${t}</span>`
-    ).join('');
+    // Render tags with proper styling
+    const tagsHtml = post.tags.map(tag => {
+        if (window.tagManager) {
+            return window.tagManager.renderTag(tag, post);
+        }
+        return `<span class="tag" data-tag="${tag}">${tag}</span>`;
+    }).join('');
     
     const actions = source === 'pending' ? 
         `<button class="btn-success" onclick="savePost(${post.id})">💾 Save</button>
          <button class="btn-secondary" onclick="discardPost(${post.id})">🗑️ Discard</button>
          <button class="btn-primary" onclick="window.open('https://rule34.xxx/index.php?page=post&s=view&id=${post.id}', '_blank')">🔗 View on R34</button>
-         <button class="btn-warning greyed-out" disabled title="API not supported">❤️ Like</button>
-         <button class="btn-primary greyed-out" disabled title="API not supported">✏️ Edit Tags</button>` :
+         <button class="btn-warning greyed-out" disabled title="API not supported">❤️ Like</button>` :
         `<button class="btn-primary" onclick="window.open('https://rule34.xxx/index.php?page=post&s=view&id=${post.id}', '_blank')">🔗 View on R34</button>
-         <button class="btn-warning greyed-out" disabled title="API not supported">❤️ Like</button>
-         <button class="btn-primary greyed-out" disabled title="API not supported">✏️ Edit Tags</button>`;
+         <button class="btn-warning greyed-out" disabled title="API not supported">❤️ Like</button>`;
     
     document.getElementById('modalInfo').innerHTML = `
         <h3>${post.title || `Post ${post.id}`}</h3>
@@ -781,9 +794,13 @@ function displayModalPost(post, source) {
             <div class="modal-info-item"><strong>Score:</strong> ${post.score}</div>
             <div class="modal-info-item"><strong>Tags:</strong> ${post.tags.length}</div>
         </div>
+        <div style="margin: 15px 0; display: flex; gap: 10px; align-items: center;">
+            <button class="btn-primary edit-tags-btn" style="font-size: 12px;">✏️ Edit Tags</button>
+            <button class="btn-primary internet-required fetch-tags-btn" style="font-size: 12px;">🔄 Fetch from API</button>
+        </div>
         <h4 style="color:#94a3b8;margin-bottom:10px">Tags:</h4>
         <div class="modal-tags">${tagsHtml}</div>
-        <div class="modal-actions">${actions}</div>
+        <div class="modal-actions" style="margin-top: 15px;">${actions}</div>
     `;
     
     // Attach tag click listeners
@@ -793,6 +810,19 @@ function displayModalPost(post, source) {
             filterByTag(tag.dataset.tag, source);
         });
     });
+    
+    // Setup tag editing if tagManager is available
+    if (window.tagManager) {
+        window.tagManager.setupTagEditing(post, source);
+        
+        // Setup fetch from API button
+        const fetchBtn = document.querySelector('.fetch-tags-btn');
+        if (fetchBtn) {
+            fetchBtn.addEventListener('click', () => {
+                window.tagManager.fetchAndMergeTags(post, source);
+            });
+        }
+    }
 }
 
 function navigateModal(direction) {
