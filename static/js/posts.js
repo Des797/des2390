@@ -1,7 +1,59 @@
-// Posts Management
+// Post Rendering
+function renderPost(post) {
+    const isVideo = ['.mp4', '.webm'].includes(post.file_type);
+    const mediaUrl = post.status === 'pending' ? 
+        `/temp/${post.id}${post.file_type}` : 
+        `/saved/${post.date_folder}/${post.id}${post.file_type}`;
+    
+    const isSelected = state.selectedPosts.has(post.id);
+    
+    const mediaHtml = isVideo ? 
+        `<video src="${mediaUrl}"></video><div class="video-overlay"></div>` :
+        `<img src="${mediaUrl}" alt="Post ${post.id}" loading="lazy">`;
+    
+    const titleHtml = post.title ? `<div class="gallery-item-title">${post.title}</div>` : '';
+    const ownerHtml = `<div class="gallery-item-owner" data-owner="${post.owner}">${post.owner}</div>`;
+    
+    // Tags with counts
+    const tagsPreview = post.tags.slice(0, 5).map(t => {
+        const tagWithCount = getTagWithCount(t, state.tagCounts);
+        return `<span class="tag" data-tag="${t}">${tagWithCount}</span>`;
+    }).join('');
+    const expandBtn = post.tags.length > 5 ? 
+        `<span style="cursor:pointer;color:#10b981" class="expand-tags">+${post.tags.length - 5} more</span>` : '';
+    
+    // Status badge
+    const statusBadge = post.status === 'pending' ? 
+        '<span style="background:#f59e0b;color:white;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:600;">PENDING</span>' :
+        '<span style="background:#10b981;color:white;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:600;">SAVED</span>';
+    
+    const actions = post.status === 'pending' ? 
+        `<button class="btn-success save-btn" data-id="${post.id}">💾 Save</button>
+         <button class="btn-secondary discard-btn" data-id="${post.id}">🗑️ Discard</button>
+         <button class="btn-primary view-r34-btn" data-id="${post.id}">🔗 View</button>` :
+        `<button class="btn-primary view-btn" data-id="${post.id}">👁️ View</button>
+         <button class="btn-primary view-r34-btn" data-id="${post.id}">🔗 R34</button>
+         <button class="btn-danger delete-btn" data-id="${post.id}" data-folder="${post.date_folder}">🗑️ Delete</button>`;
+    
+    return `
+        <div class="gallery-item ${isSelected ? 'selected' : ''}" data-post-id="${post.id}" data-status="${post.status}">
+            <div class="gallery-item-media">
+                <div class="select-checkbox ${isSelected ? 'checked' : ''}" data-id="${post.id}"></div>
+                <div class="media-wrapper" data-id="${post.id}">${mediaHtml}</div>
+            </div>
+            <div class="gallery-item-info">
+                ${titleHtml}${ownerHtml}
+                <div class="gallery-item-id">ID: ${post.id} • ${post.width}×${post.height} • Score: ${post.score} • ${statusBadge}</div>
+                <div class="gallery-item-tags" data-all-tags='${JSON.stringify(post.tags)}'>${tagsPreview}${expandBtn}</div>
+                <div class="gallery-item-actions">${actions}</div>
+            </div>
+        </div>`;
+}// Posts Management
 import { state, updateURLState } from './state.js';
-import { showNotification, formatBytes, getTagWithCount, applySearchFilter } from './utils.js';
+import { showNotification, getTagWithCount, applySearchFilter } from './utils.js';
 import { loadPosts as apiLoadPosts, savePost as apiSavePost, discardPost as apiDiscardPost, deletePost as apiDeletePost, getPostSize, loadTagCounts } from './api.js';
+import { renderPost, renderPagination, renderEmptyState } from './posts_renderer.js';
+import { attachPostEventListeners } from './event_handlers.js';
 
 // Sorting Functions
 async function sortPosts(posts, sortBy) {
@@ -54,58 +106,6 @@ async function sortPosts(posts, sortBy) {
     });
 }
 
-// Post Rendering
-function renderPost(post) {
-    const isVideo = ['.mp4', '.webm'].includes(post.file_type);
-    const mediaUrl = post.status === 'pending' ? 
-        `/temp/${post.id}${post.file_type}` : 
-        `/saved/${post.date_folder}/${post.id}${post.file_type}`;
-    
-    const isSelected = state.selectedPosts.has(post.id);
-    
-    const mediaHtml = isVideo ? 
-        `<video src="${mediaUrl}"></video><div class="video-overlay"></div>` :
-        `<img src="${mediaUrl}" alt="Post ${post.id}" loading="lazy">`;
-    
-    const titleHtml = post.title ? `<div class="gallery-item-title">${post.title}</div>` : '';
-    const ownerHtml = `<div class="gallery-item-owner" data-owner="${post.owner}">${post.owner}</div>`;
-    
-    // Tags with counts
-    const tagsPreview = post.tags.slice(0, 5).map(t => {
-        const tagWithCount = getTagWithCount(t, state.tagCounts);
-        return `<span class="tag" data-tag="${t}">${tagWithCount}</span>`;
-    }).join('');
-    const expandBtn = post.tags.length > 5 ? 
-        `<span style="cursor:pointer;color:#10b981" class="expand-tags">+${post.tags.length - 5} more</span>` : '';
-    
-    // Status badge
-    const statusBadge = post.status === 'pending' ? 
-        '<span style="background:#f59e0b;color:white;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:600;">PENDING</span>' :
-        '<span style="background:#10b981;color:white;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:600;">SAVED</span>';
-    
-    const actions = post.status === 'pending' ? 
-        `<button class="btn-success save-btn" data-id="${post.id}">💾 Save</button>
-         <button class="btn-secondary discard-btn" data-id="${post.id}">🗑️ Discard</button>
-         <button class="btn-primary view-r34-btn" data-id="${post.id}">🔗 View</button>` :
-        `<button class="btn-primary view-btn" data-id="${post.id}">👁️ View</button>
-         <button class="btn-primary view-r34-btn" data-id="${post.id}">🔗 R34</button>
-         <button class="btn-danger delete-btn" data-id="${post.id}" data-folder="${post.date_folder}">🗑️ Delete</button>`;
-    
-    return `
-        <div class="gallery-item ${isSelected ? 'selected' : ''}" data-post-id="${post.id}" data-status="${post.status}">
-            <div class="gallery-item-media">
-                <div class="select-checkbox ${isSelected ? 'checked' : ''}" data-id="${post.id}"></div>
-                <div class="media-wrapper" data-id="${post.id}">${mediaHtml}</div>
-            </div>
-            <div class="gallery-item-info">
-                ${titleHtml}${ownerHtml}
-                <div class="gallery-item-id">ID: ${post.id} • ${post.width}×${post.height} • Score: ${post.score} • ${statusBadge}</div>
-                <div class="gallery-item-tags" data-all-tags='${JSON.stringify(post.tags)}'>${tagsPreview}${expandBtn}</div>
-                <div class="gallery-item-actions">${actions}</div>
-            </div>
-        </div>`;
-}
-
 // Load Posts
 async function loadPosts(updateURL = true) {
     try {
@@ -129,14 +129,25 @@ async function loadPosts(updateURL = true) {
         
         const grid = document.getElementById('postsGrid');
         if (pagePosts.length === 0) {
-            grid.innerHTML = '<p style="color: #64748b; text-align: center; grid-column: 1/-1;">No posts</p>';
+            grid.innerHTML = renderEmptyState('No posts');
         } else {
             grid.innerHTML = pagePosts.map(p => renderPost(p)).join('');
             attachPostEventListeners();
         }
         
         document.getElementById('postsTotalResults').textContent = `Total: ${posts.length} posts`;
-        renderPagination(posts.length, perPage, state.postsPage);
+        const paginationHtml = renderPagination(posts.length, perPage, state.postsPage);
+        const container = document.getElementById('postsPagination');
+        container.innerHTML = paginationHtml;
+        
+        // Attach pagination listeners
+        container.querySelectorAll('button').forEach(btn => {
+            btn.addEventListener('click', () => {
+                state.postsPage = parseInt(btn.dataset.page);
+                loadPosts();
+            });
+        });
+        
         updateBulkControls();
         
         // Update URL with current state
@@ -154,86 +165,7 @@ async function loadPosts(updateURL = true) {
     }
 }
 
-// Event Listeners for Posts
-function attachPostEventListeners() {
-    // Select checkboxes
-    document.querySelectorAll('.select-checkbox').forEach(checkbox => {
-        checkbox.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const postId = parseInt(checkbox.dataset.id);
-            toggleSelection(postId);
-        });
-    });
-    
-    // Media click to view
-    document.querySelectorAll('.media-wrapper').forEach(wrapper => {
-        wrapper.addEventListener('click', () => {
-            const postId = parseInt(wrapper.dataset.id);
-            showFullMedia(postId);
-        });
-    });
-    
-    // Owner filter
-    document.querySelectorAll('.gallery-item-owner').forEach(owner => {
-        owner.addEventListener('click', () => {
-            filterByOwner(owner.dataset.owner);
-        });
-    });
-    
-    // Tag filter
-    document.querySelectorAll('.gallery-item-tags .tag').forEach(tag => {
-        tag.addEventListener('click', () => {
-            filterByTag(tag.dataset.tag);
-        });
-    });
-    
-    // Expand tags
-    document.querySelectorAll('.expand-tags').forEach(btn => {
-        btn.addEventListener('click', function() {
-            const container = this.parentElement;
-            const allTags = JSON.parse(container.dataset.allTags);
-            container.innerHTML = allTags.map(t => {
-                const tagWithCount = getTagWithCount(t, state.tagCounts);
-                return `<span class="tag" data-tag="${t}">${tagWithCount}</span>`;
-            }).join('');
-            // Re-attach tag listeners
-            container.querySelectorAll('.tag').forEach(tag => {
-                tag.addEventListener('click', () => filterByTag(tag.dataset.tag));
-            });
-        });
-    });
-    
-    // Action buttons
-    document.querySelectorAll('.save-btn').forEach(btn => {
-        btn.addEventListener('click', async () => {
-            await savePostAction(parseInt(btn.dataset.id));
-        });
-    });
-    
-    document.querySelectorAll('.discard-btn').forEach(btn => {
-        btn.addEventListener('click', async () => {
-            await discardPostAction(parseInt(btn.dataset.id));
-        });
-    });
-    
-    document.querySelectorAll('.view-btn').forEach(btn => {
-        btn.addEventListener('click', () => showFullMedia(parseInt(btn.dataset.id)));
-    });
-    
-    document.querySelectorAll('.view-r34-btn').forEach(btn => {
-        btn.addEventListener('click', () => {
-            window.open(`https://rule34.xxx/index.php?page=post&s=view&id=${btn.dataset.id}`, '_blank');
-        });
-    });
-    
-    document.querySelectorAll('.delete-btn').forEach(btn => {
-        btn.addEventListener('click', async () => {
-            if (confirm('Delete this post permanently?')) {
-                await deletePostAction(parseInt(btn.dataset.id), btn.dataset.folder);
-            }
-        });
-    });
-}
+// Event Listeners are now in event_handlers.js
 
 // Post Actions
 async function savePostAction(postId) {
@@ -346,33 +278,7 @@ function filterByOwner(owner) {
     loadPosts();
 }
 
-// Pagination
-function renderPagination(total, perPage, currentPage) {
-    const totalPages = Math.ceil(total / perPage);
-    const container = document.getElementById('postsPagination');
-    
-    if (totalPages <= 1) {
-        container.innerHTML = '';
-        return;
-    }
-    
-    const buttons = [];
-    
-    buttons.push(`<button data-page="1" ${currentPage === 1 ? 'disabled' : ''}>⏮️ First</button>`);
-    buttons.push(`<button data-page="${currentPage - 1}" ${currentPage === 1 ? 'disabled' : ''}>‹ Prev</button>`);
-    buttons.push(`<span>Page ${currentPage} of ${totalPages}</span>`);
-    buttons.push(`<button data-page="${currentPage + 1}" ${currentPage === totalPages ? 'disabled' : ''}>Next ›</button>`);
-    buttons.push(`<button data-page="${totalPages}" ${currentPage === totalPages ? 'disabled' : ''}>Last ⏭️</button>`);
-    
-    container.innerHTML = buttons.join('');
-    
-    container.querySelectorAll('button').forEach(btn => {
-        btn.addEventListener('click', () => {
-            state.postsPage = parseInt(btn.dataset.page);
-            loadPosts();
-        });
-    });
-}
+// Pagination is now handled in renderPagination() from posts_renderer.js
 
 export {
     loadPosts,
@@ -381,5 +287,6 @@ export {
     filterByOwner,
     savePostAction,
     discardPostAction,
-    deletePostAction
+    deletePostAction,
+    toggleSelection
 };

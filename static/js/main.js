@@ -1,7 +1,7 @@
 // Main Entry Point
 import { state, initHistoryManagement } from './state.js';
-import { loadConfig, saveConfig, loadSearchHistory, showSearchDropdown, hideSearchDropdown, addBlacklistTags, removeBlacklistTag } from './config.js';
-import { startScraper, stopScraper, updateStatus } from './scraper_ui.js';
+import { loadConfig, saveConfig, loadSearchHistory, showSearchDropdown, hideSearchDropdown, addBlacklistTags } from './config.js';
+import { startScraper, stopScraper, updateStatus, loadTagHistory } from './scraper_ui.js';
 import { loadPosts, clearSelection } from './posts.js';
 import { bulkSavePosts, bulkDiscardPosts, bulkDeletePosts } from './bulk.js';
 import { navigateModal, closeModal } from './modal.js';

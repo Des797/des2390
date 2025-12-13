@@ -6,11 +6,17 @@ Create this exact folder structure:
 
 ```
 rule34_scraper/
-├── app.py                      # Main Flask application
+├── app.py                      # Main Flask application (updated)
+├── config.py                   # Configuration management (NEW)
+├── routes.py                   # Flask routes/blueprints (NEW)
 ├── database.py                 # Database operations module
 ├── api_client.py               # Rule34 API client module
 ├── file_manager.py             # File operations module
 ├── scraper.py                  # Scraper logic module
+├── utils.py                    # Backend utilities (NEW)
+├── exceptions.py               # Custom exceptions (NEW)
+├── validators.py               # Input validation (NEW)
+├── services.py                 # Business logic layer (NEW)
 ├── rule34_scraper.db          # Database (created automatically)
 ├── rule34_scraper.log         # Logs (created automatically)
 ├── templates/
@@ -25,7 +31,10 @@ rule34_scraper/
         ├── utils.js           # Utility functions
         ├── api.js             # API calls
         ├── config.js          # Configuration management
-        ├── posts.js           # Posts display & management
+        ├── constants.js       # Constants & config (NEW)
+        ├── posts.js           # Posts logic (refactored)
+        ├── posts_renderer.js  # Posts rendering (NEW)
+        ├── event_handlers.js  # Event binding (NEW)
         ├── modal.js           # Modal/lightbox functions
         ├── bulk.js            # Bulk operations
         ├── scraper_ui.js      # Scraper UI controls
@@ -233,19 +242,28 @@ The scraper automatically limits requests to **60 per minute** to comply with Ru
 ## 🏗️ Architecture
 
 ### Backend (Python)
-- **app.py**: Main Flask routes and application setup
+- **app.py**: Main Flask routes and application setup (will be refactored to use routes.py)
+- **config.py**: Centralized configuration with dataclasses and environment variables
+- **routes.py**: Flask Blueprints for organized routing
 - **database.py**: All database operations (SQLite)
 - **api_client.py**: Rule34 API communication and rate limiting
 - **file_manager.py**: File system operations
 - **scraper.py**: Main scraping logic
+- **utils.py**: Shared utility functions (file operations, formatting, etc.)
+- **exceptions.py**: Custom exception classes for better error handling
+- **validators.py**: Input validation functions
+- **services.py**: Business logic layer (coordinates between modules)
 
 ### Frontend (JavaScript Modules)
 - **main.js**: Entry point, initializes everything
 - **state.js**: Global state and browser history management
 - **utils.js**: Utility functions (formatting, filtering, etc.)
+- **constants.js**: All configuration constants and magic strings
 - **api.js**: Frontend API calls to Flask backend
 - **config.js**: Configuration UI management
-- **posts.js**: Posts display, filtering, sorting
+- **posts.js**: Posts business logic (refactored, rendering separated)
+- **posts_renderer.js**: Pure rendering functions for posts
+- **event_handlers.js**: All DOM event binding logic
 - **modal.js**: Lightbox/modal functionality
 - **bulk.js**: Bulk operations on multiple posts
 - **scraper_ui.js**: Scraper controls and status
