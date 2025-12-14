@@ -119,25 +119,16 @@
                             <span class="total-results" id="postsTotalResults"></span>
                             <input type="text" id="postsSearchInput" placeholder="Search (tags, owner:name, score:>50)">
                             <select id="postsSort">
-                                <option value="download-desc">Download Date ↓</option>
-                                <option value="download-asc">Download Date ↑</option>
-                                <option value="upload-desc">Upload Date ↓</option>
-                                <option value="upload-asc">Upload Date ↑</option>
-                                <option value="id-desc">ID ↓</option>
-                                <option value="id-asc">ID ↑</option>
-                                <option value="score-desc">Score ↓</option>
-                                <option value="score-asc">Score ↑</option>
-                                <option value="tags-desc">Tag Count ↓</option>
-                                <option value="tags-asc">Tag Count ↑</option>
-                                <option value="size-desc">File Size ↓</option>
-                                <option value="size-asc">File Size ↑</option>
+                                <option value="download">Download Date</option>
+                                <option value="upload">Upload Date</option>
+                                <option value="id">ID</option>
+                                <option value="score">Score</option>
+                                <option value="tags">Tag Count</option>
+                                <option value="size">File Size</option>
                             </select>
-                            <select id="postsPerPage">
-                                <option value="12">12 per page</option>
-                                <option value="24" selected>24 per page</option>
-                                <option value="48">48 per page</option>
-                                <option value="96">96 per page</option>
-                            </select>
+                            <button class="sort-order-btn" id="postsSortOrder" title="Toggle sort order">↓</button>
+                            <label style="color: #94a3b8; font-size: 12px;">Per Page:</label>
+                            <input type="number" id="postsPerPage" value="42" min="1" max="200" style="width: 70px;">
                         </div>
                     </div>
                     <div class="gallery-grid" id="postsGrid"></div>

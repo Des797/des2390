@@ -25,8 +25,10 @@ export const UI_CONSTANTS = {
     NOTIFICATION_DURATION: 3000,
     STATUS_UPDATE_INTERVAL: 2000,
     SEARCH_DROPDOWN_DELAY: 200,
-    TAGS_PREVIEW_LIMIT: 5,
-    SEARCH_HISTORY_LIMIT: 10
+    TAGS_PREVIEW_LIMIT: 3,
+    SEARCH_HISTORY_LIMIT: 10,
+    CARD_BASE_WIDTH: 180,
+    CARD_ROW_HEIGHT: 10
 };
 
 // File Type Constants
@@ -35,20 +37,20 @@ export const FILE_TYPES = {
     IMAGE: ['.jpg', '.jpeg', '.png', '.gif', '.webp']
 };
 
-// Sort Options
+// Sort Options (simplified)
 export const SORT_OPTIONS = {
-    DOWNLOAD_DESC: 'download-desc',
-    DOWNLOAD_ASC: 'download-asc',
-    UPLOAD_DESC: 'upload-desc',
-    UPLOAD_ASC: 'upload-asc',
-    ID_DESC: 'id-desc',
-    ID_ASC: 'id-asc',
-    SCORE_DESC: 'score-desc',
-    SCORE_ASC: 'score-asc',
-    TAGS_DESC: 'tags-desc',
-    TAGS_ASC: 'tags-asc',
-    SIZE_DESC: 'size-desc',
-    SIZE_ASC: 'size-asc'
+    DOWNLOAD: 'download',
+    UPLOAD: 'upload',
+    ID: 'id',
+    SCORE: 'score',
+    TAGS: 'tags',
+    SIZE: 'size'
+};
+
+// Sort Order
+export const SORT_ORDER = {
+    ASC: 'asc',
+    DESC: 'desc'
 };
 
 // Filter Options
@@ -83,8 +85,10 @@ export const TAB_NAMES = {
 // Pagination
 export const PAGINATION = {
     DEFAULT_PAGE: 1,
-    DEFAULT_PER_PAGE: 24,
-    PER_PAGE_OPTIONS: [12, 24, 48, 96]
+    DEFAULT_PER_PAGE: 42,
+    MIN_PER_PAGE: 1,
+    MAX_PER_PAGE: 200,
+    PER_PAGE_OPTIONS: [12, 24, 42, 60, 96, 120]
 };
 
 // Bulk Operations
@@ -106,7 +110,8 @@ export const URL_PARAMS = {
     PAGE: 'page',
     FILTER: 'filter',
     SEARCH: 'search',
-    SORT: 'sort'
+    SORT: 'sort',
+    ORDER: 'order'
 };
 
 // Element IDs
@@ -132,6 +137,7 @@ export const ELEMENT_IDS = {
     SEARCH_DROPDOWN: 'searchDropdown',
     POSTS_STATUS_FILTER: 'postsStatusFilter',
     POSTS_SORT: 'postsSort',
+    POSTS_SORT_ORDER: 'postsSortOrder',
     POSTS_PER_PAGE: 'postsPerPage',
     TAG_HISTORY_PER_PAGE: 'tagHistoryPerPage',
     
@@ -220,7 +226,8 @@ export const DEFAULTS = {
     PAGE: PAGINATION.DEFAULT_PAGE,
     FILTER: FILTER_OPTIONS.ALL,
     SEARCH: '',
-    SORT: SORT_OPTIONS.DOWNLOAD_DESC,
+    SORT: SORT_OPTIONS.DOWNLOAD,
+    ORDER: SORT_ORDER.DESC,
     PER_PAGE: PAGINATION.DEFAULT_PER_PAGE
 };
 
@@ -242,6 +249,7 @@ export default {
     UI_CONSTANTS,
     FILE_TYPES,
     SORT_OPTIONS,
+    SORT_ORDER,
     FILTER_OPTIONS,
     POST_STATUS,
     NOTIFICATION_TYPES,

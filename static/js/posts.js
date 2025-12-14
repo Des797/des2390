@@ -4,18 +4,20 @@ import { showNotification, applySearchFilter } from './utils.js';
 import { loadPosts as apiLoadPosts, savePost as apiSavePost, discardPost as apiDiscardPost, deletePost as apiDeletePost, getPostSize, loadTagCounts } from './api.js';
 import { renderPost, renderPaginationButtons } from './posts_renderer.js';
 import { attachPostEventListeners, setupPaginationListeners } from './event_handlers.js';
-import { ELEMENT_IDS, URL_PARAMS, POST_STATUS, CSS_CLASSES } from './constants.js';
+import { ELEMENT_IDS, URL_PARAMS, POST_STATUS, CSS_CLASSES, PAGINATION, SORT_ORDER } from './constants.js';
 
 // Sorting Functions
-async function sortPosts(posts, sortBy) {
-    const [field, order] = sortBy.split('-');
-    
+async function sortPosts(posts, sortBy, order) {
     // For size sorting, fetch sizes first
-    if (field === 'size') {
+    if (sortBy === 'size') {
         await Promise.all(posts.map(async p => {
             if (!state.postSizes[p.id]) {
-                const result = await getPostSize(p.id);
-                state.postSizes[p.id] = result.size;
+                try {
+                    const result = await getPostSize(p.id);
+                    state.postSizes[p.id] = result.size;
+                } catch (e) {
+                    state.postSizes[p.id] = 0;
+                }
             }
         }));
     }
@@ -23,7 +25,7 @@ async function sortPosts(posts, sortBy) {
     return posts.sort((a, b) => {
         let valA, valB;
         
-        switch(field) {
+        switch(sortBy) {
             case 'download':
                 valA = new Date(a.downloaded_at || a.timestamp);
                 valB = new Date(b.downloaded_at || b.timestamp);
@@ -53,7 +55,7 @@ async function sortPosts(posts, sortBy) {
                 valB = b.timestamp;
         }
         
-        return order === 'asc' ? valA - valB : valB - valA;
+        return order === SORT_ORDER.ASC ? valA - valB : valB - valA;
     });
 }
 
@@ -66,12 +68,34 @@ async function loadPosts(updateURL = true) {
         // Load posts based on filter
         let posts = await apiLoadPosts(state.postsStatusFilter);
         
-        const sortBy = document.getElementById(ELEMENT_IDS.POSTS_SORT).value;
-        const perPage = parseInt(document.getElementById(ELEMENT_IDS.POSTS_PER_PAGE).value);
+        // Fix missing file_type in older posts
+        posts = posts.map(post => {
+            if (!post.file_type) {
+                // Try to infer from file_url or file_path
+                const url = post.file_url || post.file_path || '';
+                const match = url.match(/\.(jpg|jpeg|png|gif|webp|mp4|webm)$/i);
+                post.file_type = match ? `.${match[1].toLowerCase()}` : '.jpg';
+            }
+            return post;
+        });
+        
+        const sortBy = state.postsSortBy;
+        const order = state.postsSortOrder;
+        let perPage = parseInt(document.getElementById(ELEMENT_IDS.POSTS_PER_PAGE).value);
+        
+        // Validate perPage
+        if (isNaN(perPage) || perPage < PAGINATION.MIN_PER_PAGE) {
+            perPage = PAGINATION.MIN_PER_PAGE;
+            document.getElementById(ELEMENT_IDS.POSTS_PER_PAGE).value = perPage;
+        } else if (perPage > PAGINATION.MAX_PER_PAGE) {
+            perPage = PAGINATION.MAX_PER_PAGE;
+            document.getElementById(ELEMENT_IDS.POSTS_PER_PAGE).value = perPage;
+        }
+        
         const searchQuery = state.postsSearch;
         
         posts = applySearchFilter(posts, searchQuery);
-        posts = await sortPosts(posts, sortBy);
+        posts = await sortPosts(posts, sortBy, order);
         state.allPosts = posts;
         
         const start = (state.postsPage - 1) * perPage;
@@ -82,13 +106,16 @@ async function loadPosts(updateURL = true) {
         if (pagePosts.length === 0) {
             grid.innerHTML = '<p style="color: #64748b; text-align: center; grid-column: 1/-1;">No posts</p>';
         } else {
-            grid.innerHTML = pagePosts.map(p => renderPost(p)).join('');
+            // Pass sortBy and searchQuery to renderPost for conditional info display
+            grid.innerHTML = pagePosts.map(p => renderPost(p, sortBy, searchQuery)).join('');
             attachPostEventListeners();
+            setupVideoPreviewListeners();
         }
         
         document.getElementById(ELEMENT_IDS.POSTS_TOTAL_RESULTS).textContent = `Total: ${posts.length} posts`;
         renderPagination(posts.length, perPage, state.postsPage);
         updateBulkControls();
+        updateSortOrderButton();
         
         // Update URL with current state
         if (updateURL) {
@@ -97,12 +124,64 @@ async function loadPosts(updateURL = true) {
                 [URL_PARAMS.PAGE]: state.postsPage,
                 [URL_PARAMS.FILTER]: state.postsStatusFilter,
                 [URL_PARAMS.SEARCH]: searchQuery,
-                [URL_PARAMS.SORT]: sortBy
+                [URL_PARAMS.SORT]: sortBy,
+                [URL_PARAMS.ORDER]: order
             });
         }
     } catch (error) {
         showNotification('Failed to load posts', 'error');
     }
+}
+
+// Update sort order button appearance
+function updateSortOrderButton() {
+    const btn = document.getElementById(ELEMENT_IDS.POSTS_SORT_ORDER);
+    if (btn) {
+        btn.textContent = state.postsSortOrder === SORT_ORDER.ASC ? '↑' : '↓';
+        btn.title = state.postsSortOrder === SORT_ORDER.ASC ? 'Ascending (click for descending)' : 'Descending (click for ascending)';
+    }
+}
+
+// Toggle sort order
+function toggleSortOrder() {
+    state.postsSortOrder = state.postsSortOrder === SORT_ORDER.ASC ? SORT_ORDER.DESC : SORT_ORDER.ASC;
+    state.postsPage = 1; // Reset to first page when changing sort
+    loadPosts();
+}
+
+// Setup video preview on hover
+function setupVideoPreviewListeners() {
+    const mediaWrappers = document.querySelectorAll(`.${CSS_CLASSES.MEDIA_WRAPPER}`);
+    
+    mediaWrappers.forEach(wrapper => {
+        const video = wrapper.querySelector('video[data-video-src]');
+        if (!video) return;
+        
+        const img = wrapper.querySelector('img');
+        let hoverTimeout = null;
+        
+        wrapper.addEventListener('mouseenter', () => {
+            hoverTimeout = setTimeout(() => {
+                if (img) img.classList.add('preview-hidden');
+                video.style.display = 'block';
+                video.classList.add('preview-playing');
+                video.play().catch(err => console.log('Video play failed:', err));
+            }, 3000); // 3 second delay
+        });
+        
+        wrapper.addEventListener('mouseleave', () => {
+            if (hoverTimeout) {
+                clearTimeout(hoverTimeout);
+                hoverTimeout = null;
+            }
+            
+            video.pause();
+            video.currentTime = 0;
+            video.style.display = 'none';
+            video.classList.remove('preview-playing');
+            if (img) img.classList.remove('preview-hidden');
+        });
+    });
 }
 
 // Post Actions
@@ -207,10 +286,38 @@ function renderPagination(total, perPage, currentPage) {
     
     container.innerHTML = renderPaginationButtons(currentPage, totalPages);
     
+    // Setup regular pagination buttons
     setupPaginationListeners(ELEMENT_IDS.POSTS_PAGINATION, (page) => {
         state.postsPage = page;
         loadPosts();
     });
+    
+    // Setup go-to-page button
+    const gotoBtn = document.getElementById('gotoPageBtn');
+    const gotoInput = document.getElementById('gotoPageInput');
+    
+    if (gotoBtn && gotoInput) {
+        gotoBtn.addEventListener('click', () => {
+            let targetPage = parseInt(gotoInput.value);
+            
+            if (isNaN(targetPage) || targetPage < 1) {
+                targetPage = 1;
+            } else if (targetPage > totalPages) {
+                targetPage = totalPages;
+            }
+            
+            gotoInput.value = targetPage;
+            state.postsPage = targetPage;
+            loadPosts();
+        });
+        
+        // Also allow Enter key
+        gotoInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                gotoBtn.click();
+            }
+        });
+    }
 }
 
 export {
@@ -221,5 +328,7 @@ export {
     savePostAction,
     discardPostAction,
     deletePostAction,
-    updateBulkControls
+    updateBulkControls,
+    toggleSortOrder,
+    setupVideoPreviewListeners
 };

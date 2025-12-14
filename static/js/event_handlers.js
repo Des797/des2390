@@ -2,7 +2,7 @@
 import { state } from './state.js';
 import { saveConfig, addBlacklistTags, showSearchDropdown, hideSearchDropdown } from './config.js';
 import { startScraper, stopScraper, loadTagHistory } from './scraper_ui.js';
-import { loadPosts, clearSelection, filterByTag, filterByOwner, savePostAction, discardPostAction, deletePostAction } from './posts.js';
+import { loadPosts, clearSelection, filterByTag, filterByOwner, savePostAction, discardPostAction, deletePostAction, toggleSortOrder } from './posts.js';
 import { bulkSavePosts, bulkDiscardPosts, bulkDeletePosts } from './bulk.js';
 import { showFullMedia, navigateModal, closeModal } from './modal.js';
 import { switchTab } from './navigation.js';
@@ -172,14 +172,30 @@ function setupPostsControlListeners() {
         loadPosts();
     });
     
-    document.getElementById(ELEMENT_IDS.POSTS_SORT).addEventListener('change', () => {
+    document.getElementById(ELEMENT_IDS.POSTS_SORT).addEventListener('change', (e) => {
+        state.postsSortBy = e.target.value;
         state.postsPage = 1;
         loadPosts();
     });
     
-    document.getElementById(ELEMENT_IDS.POSTS_PER_PAGE).addEventListener('change', () => {
+    // Sort order toggle button
+    document.getElementById(ELEMENT_IDS.POSTS_SORT_ORDER).addEventListener('click', () => {
+        toggleSortOrder();
+    });
+    
+    // Per page input with validation
+    const perPageInput = document.getElementById(ELEMENT_IDS.POSTS_PER_PAGE);
+    perPageInput.addEventListener('change', () => {
         state.postsPage = 1;
         loadPosts();
+    });
+    
+    // Also trigger on Enter key
+    perPageInput.addEventListener('keypress', (e) => {
+        if (e.key === KEYS.ENTER) {
+            state.postsPage = 1;
+            loadPosts();
+        }
     });
     
     document.getElementById(ELEMENT_IDS.POSTS_SEARCH_INPUT).addEventListener('input', (e) => {
@@ -245,7 +261,7 @@ function setupPaginationListeners(containerId, callback) {
     const container = document.getElementById(containerId);
     if (!container) return;
     
-    container.querySelectorAll('button').forEach(btn => {
+    container.querySelectorAll('button[data-page]').forEach(btn => {
         btn.addEventListener('click', () => {
             const page = parseInt(btn.dataset.page);
             callback(page);

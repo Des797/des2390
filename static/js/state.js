@@ -10,6 +10,8 @@ const state = {
     tagHistoryPage: DEFAULTS.PAGE,
     postsStatusFilter: DEFAULTS.FILTER,
     postsSearch: DEFAULTS.SEARCH,
+    postsSortBy: DEFAULTS.SORT,
+    postsSortOrder: DEFAULTS.ORDER,
     currentModalIndex: -1,
     selectedPosts: new Set(),
     bulkOperationActive: false,
@@ -44,7 +46,8 @@ function loadURLState() {
         page: parseInt(url.searchParams.get(URL_PARAMS.PAGE)) || DEFAULTS.PAGE,
         filter: url.searchParams.get(URL_PARAMS.FILTER) || DEFAULTS.FILTER,
         search: url.searchParams.get(URL_PARAMS.SEARCH) || DEFAULTS.SEARCH,
-        sort: url.searchParams.get(URL_PARAMS.SORT) || DEFAULTS.SORT
+        sort: url.searchParams.get(URL_PARAMS.SORT) || DEFAULTS.SORT,
+        order: url.searchParams.get(URL_PARAMS.ORDER) || DEFAULTS.ORDER
     };
 }
 
@@ -63,6 +66,12 @@ function initHistoryManagement() {
     }
     if (urlState.search) {
         state.postsSearch = urlState.search;
+    }
+    if (urlState.sort) {
+        state.postsSortBy = urlState.sort;
+    }
+    if (urlState.order) {
+        state.postsSortOrder = urlState.order;
     }
     
     // Handle browser back/forward
@@ -86,6 +95,8 @@ function initHistoryManagement() {
                 state.postsPage = urlState.page;
                 state.postsStatusFilter = urlState.filter;
                 state.postsSearch = urlState.search;
+                state.postsSortBy = urlState.sort;
+                state.postsSortOrder = urlState.order;
                 
                 // Update UI elements
                 const filterSelect = document.getElementById(ELEMENT_IDS.POSTS_STATUS_FILTER);
@@ -95,7 +106,10 @@ function initHistoryManagement() {
                 if (searchInput) searchInput.value = urlState.search;
                 
                 const sortSelect = document.getElementById(ELEMENT_IDS.POSTS_SORT);
-                if (sortSelect && urlState.sort) sortSelect.value = urlState.sort;
+                if (sortSelect) sortSelect.value = urlState.sort;
+                
+                const sortOrderBtn = document.getElementById(ELEMENT_IDS.POSTS_SORT_ORDER);
+                if (sortOrderBtn) sortOrderBtn.textContent = urlState.order === 'asc' ? '↑' : '↓';
                 
                 // Reload posts
                 import('./posts.js').then(posts => {
