@@ -5,7 +5,7 @@ from functools import wraps
 from flask import Flask, render_template, request, jsonify, send_from_directory, session, redirect, url_for
 
 # Import configuration
-from config import Config, get_config
+from config import get_config
 
 # Import our modules
 from database import Database
@@ -14,25 +14,25 @@ from file_manager import FileManager
 from scraper import Scraper
 
 # Get configuration
-config = get_config()
+app_config = get_config()
 
 # Configure logging
 logging.basicConfig(
-    level=config.LOG_LEVEL,
-    format=config.LOG_FORMAT,
+    level=app_config.LOG_LEVEL,
+    format=app_config.LOG_FORMAT,
     handlers=[
-        logging.FileHandler(config.LOG_FILE),
+        logging.FileHandler(app_config.LOG_FILE),
         logging.StreamHandler()
     ]
 )
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-app.secret_key = config.SECRET_KEY
+app.secret_key = app_config.SECRET_KEY
 
 # Initialize Elasticsearch (optional)
 es = None
-es_config = config.get_elasticsearch_config()
+es_config = app_config.get_elasticsearch_config()
 if es_config:
     try:
         from elasticsearch import Elasticsearch
@@ -42,7 +42,7 @@ if es_config:
         logger.warning(f"Elasticsearch not available: {e}")
 
 # Initialize modules
-db = Database(config.DATABASE_PATH)
+db = Database(app_config.DATABASE_PATH)
 api_client = Rule34APIClient()
 file_manager = FileManager()
 scraper = Scraper(api_client, file_manager, db, es)
@@ -73,8 +73,8 @@ def login_required(f):
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        data = request.json
-        if data.get("username") == config.AUTH_USERNAME and data.get("password") == config.AUTH_PASSWORD:
+        payload = request.json or {}
+        if payload.get("username") == app_config.AUTH_USERNAME and payload.get("password") == app_config.AUTH_PASSWORD:
             session['logged_in'] = True
             return jsonify({"success": True})
         return jsonify({"success": False, "error": "Invalid credentials"}), 401
@@ -99,34 +99,34 @@ def get_status():
 
 @app.route("/api/config", methods=["GET", "POST"])
 @login_required
-def config():
+def api_config():
     if request.method == "POST":
-        data = request.json
+        payload = request.json or {}
         
         # Save API credentials
-        if "api_user_id" in data:
-            db.save_config("api_user_id", data["api_user_id"])
-        if "api_key" in data:
-            db.save_config("api_key", data["api_key"])
+        if "api_user_id" in payload:
+            db.save_config("api_user_id", payload["api_user_id"])
+        if "api_key" in payload:
+            db.save_config("api_key", payload["api_key"])
         
         # Save paths
-        if "temp_path" in data:
-            db.save_config("temp_path", data["temp_path"])
-        if "save_path" in data:
-            db.save_config("save_path", data["save_path"])
+        if "temp_path" in payload:
+            db.save_config("temp_path", payload["temp_path"])
+        if "save_path" in payload:
+            db.save_config("save_path", payload["save_path"])
         
         # Save blacklist
-        if "blacklist" in data:
-            db.save_config("blacklist", json.dumps(data["blacklist"]))
+        if "blacklist" in payload:
+            db.save_config("blacklist", json.dumps(payload["blacklist"]))
         
         # Update modules with new config
         api_client.update_credentials(
-            data.get("api_user_id", api_client.user_id),
-            data.get("api_key", api_client.api_key)
+            payload.get("api_user_id", api_client.user_id),
+            payload.get("api_key", api_client.api_key)
         )
         file_manager.update_paths(
-            data.get("temp_path", file_manager.temp_path),
-            data.get("save_path", file_manager.save_path)
+            payload.get("temp_path", file_manager.temp_path),
+            payload.get("save_path", file_manager.save_path)
         )
         
         return jsonify({"success": True})
@@ -167,8 +167,8 @@ def rebuild_tag_counts():
 @app.route("/api/start", methods=["POST"])
 @login_required
 def start_scraper():
-    data = request.json
-    tags = data.get("tags", "")
+    payload = request.json or {}
+    tags = payload.get("tags", "")
     
     if scraper.start(tags):
         return jsonify({"success": True})
@@ -247,8 +247,8 @@ def discard_post(post_id):
 @login_required
 def delete_saved_post(post_id):
     """Delete a saved post"""
-    data = request.json
-    date_folder = data.get('date_folder')
+    payload = request.json or {}
+    date_folder = payload.get('date_folder')
     
     if not date_folder:
         return jsonify({"error": "date_folder required"}), 400
@@ -294,6 +294,6 @@ if __name__ == "__main__":
     load_startup_config()
     
     # Print configuration
-    config.print_info()
+    app_config.print_info()
     
-    app.run(debug=config.DEBUG, host=config.HOST, port=config.PORT)
+    app.run(debug=app_config.DEBUG, host=app_config.HOST, port=app_config.PORT)
