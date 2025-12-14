@@ -1,301 +1,230 @@
-"""
-Utility functions for Rule34 Scraper backend
-Shared helper functions used across modules
-"""
+"""Shared utility functions"""
 import os
-import shutil
+import json
 import hashlib
-from typing import Optional, List, Dict, Any
+from typing import Any, Dict, Optional
 from datetime import datetime
-import logging
-
-logger = logging.getLogger(__name__)
-
-
-def ensure_directory(path: str) -> bool:
-    """
-    Ensure a directory exists, create if it doesn't
-    
-    Args:
-        path: Directory path to ensure
-        
-    Returns:
-        True if successful, False otherwise
-    """
-    try:
-        os.makedirs(path, exist_ok=True)
-        return True
-    except Exception as e:
-        logger.error(f"Failed to create directory {path}: {e}")
-        return False
-
-
-def get_free_space_gb(path: str) -> Optional[float]:
-    """
-    Get free space in GB for a given path
-    
-    Args:
-        path: Path to check
-        
-    Returns:
-        Free space in GB or None if error
-    """
-    try:
-        if not path or not os.path.exists(path):
-            return None
-        
-        total, used, free = shutil.disk_usage(path)
-        return free / (1024**3)
-    except Exception as e:
-        logger.error(f"Failed to get free space for {path}: {e}")
-        return None
-
-
-def calculate_file_hash(filepath: str, algorithm: str = 'md5') -> Optional[str]:
-    """
-    Calculate hash of a file
-    
-    Args:
-        filepath: Path to file
-        algorithm: Hash algorithm (md5, sha1, sha256)
-        
-    Returns:
-        Hex digest of hash or None if error
-    """
-    try:
-        hash_func = hashlib.new(algorithm)
-        with open(filepath, 'rb') as f:
-            for chunk in iter(lambda: f.read(8192), b''):
-                hash_func.update(chunk)
-        return hash_func.hexdigest()
-    except Exception as e:
-        logger.error(f"Failed to calculate hash for {filepath}: {e}")
-        return None
-
-
-def get_file_size(filepath: str) -> int:
-    """
-    Get file size in bytes
-    
-    Args:
-        filepath: Path to file
-        
-    Returns:
-        File size in bytes, 0 if error
-    """
-    try:
-        return os.path.getsize(filepath)
-    except Exception as e:
-        logger.error(f"Failed to get file size for {filepath}: {e}")
-        return 0
 
 
 def format_bytes(bytes_size: int) -> str:
-    """
-    Format bytes to human readable string
-    
-    Args:
-        bytes_size: Size in bytes
-        
-    Returns:
-        Formatted string (e.g., "1.23 MB")
-    """
+    """Format bytes to human-readable string"""
     if bytes_size == 0:
         return "0 B"
     
     units = ['B', 'KB', 'MB', 'GB', 'TB']
+    k = 1024
     i = 0
-    size = float(bytes_size)
     
-    while size >= 1024.0 and i < len(units) - 1:
-        size /= 1024.0
+    while bytes_size >= k and i < len(units) - 1:
+        bytes_size /= k
         i += 1
     
-    return f"{size:.2f} {units[i]}"
+    return f"{bytes_size:.2f} {units[i]}"
 
 
-def sanitize_filename(filename: str) -> str:
-    """
-    Sanitize filename by removing invalid characters
+def format_timestamp(timestamp: Optional[int]) -> str:
+    """Format Unix timestamp to readable string"""
+    if timestamp is None:
+        return "Unknown"
     
-    Args:
-        filename: Original filename
-        
-    Returns:
-        Sanitized filename
-    """
-    invalid_chars = '<>:"/\\|?*'
-    for char in invalid_chars:
-        filename = filename.replace(char, '_')
-    return filename
+    try:
+        dt = datetime.fromtimestamp(timestamp)
+        return dt.strftime("%Y-%m-%d %H:%M:%S")
+    except (ValueError, OSError):
+        return "Invalid timestamp"
 
 
-def get_date_folder(date: Optional[datetime] = None) -> str:
-    """
-    Get date folder name in format MM.DD.YYYY
+def get_file_hash(filepath: str, algorithm: str = 'md5') -> Optional[str]:
+    """Calculate file hash"""
+    if not os.path.exists(filepath):
+        return None
     
-    Args:
-        date: Date to format, defaults to today
-        
-    Returns:
-        Formatted date string
-    """
-    if date is None:
-        date = datetime.now()
-    return date.strftime("%m.%d.%Y")
-
-
-def parse_tags(tags_string: str) -> List[str]:
-    """
-    Parse tags from space-separated string
-    
-    Args:
-        tags_string: Space-separated tags
-        
-    Returns:
-        List of tag strings
-    """
-    return [tag.strip() for tag in tags_string.split() if tag.strip()]
-
-
-def tags_match_blacklist(tags: List[str], blacklist: List[str]) -> bool:
-    """
-    Check if any tags match blacklist patterns
-    
-    Args:
-        tags: List of tags to check
-        blacklist: List of blacklist patterns (supports wildcards)
-        
-    Returns:
-        True if any tag matches blacklist
-    """
-    import re
-    
-    for blacklist_item in blacklist:
-        # Convert wildcard pattern to regex
-        pattern = blacklist_item.replace('*', '.*')
-        regex = re.compile(f'^{pattern}$', re.IGNORECASE)
-        
-        for tag in tags:
-            if regex.match(tag):
-                return True
-    
-    return False
-
-
-def merge_dicts(*dicts: Dict[Any, Any]) -> Dict[Any, Any]:
-    """
-    Merge multiple dictionaries
-    
-    Args:
-        *dicts: Variable number of dictionaries
-        
-    Returns:
-        Merged dictionary
-    """
-    result = {}
-    for d in dicts:
-        result.update(d)
-    return result
+    try:
+        hash_obj = hashlib.new(algorithm)
+        with open(filepath, 'rb') as f:
+            for chunk in iter(lambda: f.read(8192), b''):
+                hash_obj.update(chunk)
+        return hash_obj.hexdigest()
+    except Exception:
+        return None
 
 
 def safe_json_loads(json_string: str, default: Any = None) -> Any:
-    """
-    Safely load JSON string with fallback
-    
-    Args:
-        json_string: JSON string to parse
-        default: Default value if parsing fails
-        
-    Returns:
-        Parsed JSON or default value
-    """
-    import json
-    
+    """Safely load JSON string, return default on error"""
     try:
         return json.loads(json_string)
-    except (json.JSONDecodeError, TypeError) as e:
-        logger.warning(f"Failed to parse JSON: {e}")
+    except (json.JSONDecodeError, TypeError):
         return default
 
 
-def truncate_string(s: str, length: int, suffix: str = '...') -> str:
-    """
-    Truncate string to specified length
-    
-    Args:
-        s: String to truncate
-        length: Maximum length
-        suffix: Suffix to add if truncated
-        
-    Returns:
-        Truncated string
-    """
-    if len(s) <= length:
-        return s
-    return s[:length - len(suffix)] + suffix
+def safe_json_dumps(obj: Any, default: str = "{}") -> str:
+    """Safely dump object to JSON string, return default on error"""
+    try:
+        return json.dumps(obj)
+    except (TypeError, ValueError):
+        return default
 
 
-def batch_list(items: List[Any], batch_size: int) -> List[List[Any]]:
-    """
-    Split list into batches
+def ensure_dir_exists(path: str) -> bool:
+    """Ensure directory exists, create if needed"""
+    try:
+        os.makedirs(path, exist_ok=True)
+        return True
+    except OSError:
+        return False
+
+
+def get_file_extension(filename: str) -> str:
+    """Get file extension including the dot"""
+    _, ext = os.path.splitext(filename)
+    return ext.lower()
+
+
+def is_video_file(filename: str) -> bool:
+    """Check if file is a video based on extension"""
+    video_extensions = ['.mp4', '.webm', '.avi', '.mov', '.mkv']
+    return get_file_extension(filename) in video_extensions
+
+
+def is_image_file(filename: str) -> bool:
+    """Check if file is an image based on extension"""
+    image_extensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp']
+    return get_file_extension(filename) in image_extensions
+
+
+def merge_dicts(base: Dict, updates: Dict) -> Dict:
+    """Merge two dictionaries, updates override base"""
+    result = base.copy()
+    result.update(updates)
+    return result
+
+
+def truncate_string(text: str, max_length: int = 100, suffix: str = '...') -> str:
+    """Truncate string to max length"""
+    if len(text) <= max_length:
+        return text
+    return text[:max_length - len(suffix)] + suffix
+
+
+def sanitize_tag(tag: str) -> str:
+    """Sanitize a tag string"""
+    # Remove leading/trailing whitespace
+    tag = tag.strip()
     
-    Args:
-        items: List to batch
-        batch_size: Size of each batch
+    # Replace multiple spaces with single space
+    tag = ' '.join(tag.split())
+    
+    # Convert to lowercase for consistency
+    tag = tag.lower()
+    
+    return tag
+
+
+def parse_tags_string(tags_string: str) -> list:
+    """Parse space-separated tags string into list"""
+    if not tags_string:
+        return []
+    
+    tags = tags_string.split()
+    return [sanitize_tag(tag) for tag in tags if tag.strip()]
+
+
+def calculate_storage_info(path: str) -> Dict[str, int]:
+    """Calculate storage information for a path"""
+    try:
+        if not os.path.exists(path):
+            return {
+                'total': 0,
+                'used': 0,
+                'free': 0,
+                'percent_used': 0
+            }
         
-    Returns:
-        List of batches
-    """
-    return [items[i:i + batch_size] for i in range(0, len(items), batch_size)]
+        stat = os.statvfs(path) if hasattr(os, 'statvfs') else None
+        
+        if stat:
+            total = stat.f_blocks * stat.f_frsize
+            free = stat.f_bavail * stat.f_frsize
+            used = total - free
+        else:
+            # Windows fallback
+            import shutil
+            total, used, free = shutil.disk_usage(path)
+        
+        percent_used = (used / total * 100) if total > 0 else 0
+        
+        return {
+            'total': total,
+            'used': used,
+            'free': free,
+            'percent_used': round(percent_used, 2)
+        }
+    except Exception:
+        return {
+            'total': 0,
+            'used': 0,
+            'free': 0,
+            'percent_used': 0
+        }
+
+
+def count_files_in_directory(path: str, extensions: Optional[list] = None) -> int:
+    """Count files in directory, optionally filter by extensions"""
+    if not os.path.exists(path) or not os.path.isdir(path):
+        return 0
+    
+    count = 0
+    try:
+        for filename in os.listdir(path):
+            filepath = os.path.join(path, filename)
+            if os.path.isfile(filepath):
+                if extensions is None:
+                    count += 1
+                else:
+                    if get_file_extension(filename) in extensions:
+                        count += 1
+    except OSError:
+        pass
+    
+    return count
+
+
+def get_current_timestamp() -> int:
+    """Get current Unix timestamp"""
+    return int(datetime.now().timestamp())
+
+
+def get_date_folder() -> str:
+    """Get current date folder name in MM.DD.YYYY format"""
+    return datetime.now().strftime("%m.%d.%Y")
+
+
+def chunks(lst: list, n: int):
+    """Yield successive n-sized chunks from list"""
+    for i in range(0, len(lst), n):
+        yield lst[i:i + n]
+
+
+def clamp(value: int, min_value: int, max_value: int) -> int:
+    """Clamp value between min and max"""
+    return max(min_value, min(value, max_value))
 
 
 def is_valid_url(url: str) -> bool:
-    """
-    Check if string is a valid URL
+    """Basic URL validation"""
+    if not url or not isinstance(url, str):
+        return False
     
-    Args:
-        url: URL to validate
-        
-    Returns:
-        True if valid URL
-    """
+    return url.startswith(('http://', 'https://'))
+
+
+def extract_post_id_from_url(url: str) -> Optional[int]:
+    """Extract post ID from Rule34 URL"""
     import re
-    
-    pattern = re.compile(
-        r'^https?://'  # http:// or https://
-        r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'  # domain
-        r'localhost|'  # localhost
-        r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # IP
-        r'(?::\d+)?'  # optional port
-        r'(?:/?|[/?]\S+)$', re.IGNORECASE)
-    
-    return pattern.match(url) is not None
-
-
-def retry_on_exception(func, max_retries: int = 3, delay: float = 1.0):
-    """
-    Retry function on exception
-    
-    Args:
-        func: Function to retry
-        max_retries: Maximum number of retries
-        delay: Delay between retries in seconds
-        
-    Returns:
-        Function result or raises last exception
-    """
-    import time
-    
-    last_exception = None
-    
-    for attempt in range(max_retries):
+    match = re.search(r'id=(\d+)', url)
+    if match:
         try:
-            return func()
-        except Exception as e:
-            last_exception = e
-            logger.warning(f"Attempt {attempt + 1}/{max_retries} failed: {e}")
-            if attempt < max_retries - 1:
-                time.sleep(delay)
-    
-    raise last_exception
+            return int(match.group(1))
+        except ValueError:
+            pass
+    return None

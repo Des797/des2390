@@ -74,30 +74,35 @@ function initHistoryManagement() {
         
         const urlState = loadURLState();
         
-        // Switch to appropriate tab
-        if (urlState.tab !== state.currentTab) {
-            switchTab(urlState.tab, false); // false = don't update URL
-        }
-        
-        // Update posts state if on posts tab
-        if (urlState.tab === 'posts') {
-            state.postsPage = urlState.page;
-            state.postsStatusFilter = urlState.filter;
-            state.postsSearch = urlState.search;
+        // Import switchTab and loadPosts dynamically to avoid circular dependency
+        import('./navigation.js').then(nav => {
+            // Switch to appropriate tab
+            if (urlState.tab !== state.currentTab) {
+                nav.switchTab(urlState.tab, false); // false = don't update URL
+            }
             
-            // Update UI elements
-            const filterSelect = document.getElementById(ELEMENT_IDS.POSTS_STATUS_FILTER);
-            if (filterSelect) filterSelect.value = urlState.filter;
-            
-            const searchInput = document.getElementById(ELEMENT_IDS.POSTS_SEARCH_INPUT);
-            if (searchInput) searchInput.value = urlState.search;
-            
-            const sortSelect = document.getElementById(ELEMENT_IDS.POSTS_SORT);
-            if (sortSelect && urlState.sort) sortSelect.value = urlState.sort;
-            
-            // Reload posts
-            loadPosts(false); // false = don't update URL
-        }
+            // Update posts state if on posts tab
+            if (urlState.tab === 'posts') {
+                state.postsPage = urlState.page;
+                state.postsStatusFilter = urlState.filter;
+                state.postsSearch = urlState.search;
+                
+                // Update UI elements
+                const filterSelect = document.getElementById(ELEMENT_IDS.POSTS_STATUS_FILTER);
+                if (filterSelect) filterSelect.value = urlState.filter;
+                
+                const searchInput = document.getElementById(ELEMENT_IDS.POSTS_SEARCH_INPUT);
+                if (searchInput) searchInput.value = urlState.search;
+                
+                const sortSelect = document.getElementById(ELEMENT_IDS.POSTS_SORT);
+                if (sortSelect && urlState.sort) sortSelect.value = urlState.sort;
+                
+                // Reload posts
+                import('./posts.js').then(posts => {
+                    posts.loadPosts(false); // false = don't update URL
+                });
+            }
+        });
     });
 }
 
