@@ -1,18 +1,19 @@
 // Utility Functions
+import { ELEMENT_IDS, CSS_CLASSES, NOTIFICATION_TYPES, UI_CONSTANTS } from './constants.js';
 
-function showNotification(message, type = 'success') {
-    const notification = document.getElementById('notification');
-    const text = document.getElementById('notificationText');
+function showNotification(message, type = NOTIFICATION_TYPES.SUCCESS) {
+    const notification = document.getElementById(ELEMENT_IDS.NOTIFICATION);
+    const text = document.getElementById(ELEMENT_IDS.NOTIFICATION_TEXT);
     
-    notification.className = 'notification show';
-    if (type === 'error') notification.classList.add('error');
-    if (type === 'warning') notification.classList.add('warning');
+    notification.className = `${CSS_CLASSES.NOTIFICATION} ${CSS_CLASSES.SHOW}`;
+    if (type === NOTIFICATION_TYPES.ERROR) notification.classList.add(CSS_CLASSES.ERROR);
+    if (type === NOTIFICATION_TYPES.WARNING) notification.classList.add(CSS_CLASSES.WARNING);
     
     text.textContent = message;
     
     setTimeout(() => {
-        notification.classList.remove('show');
-    }, 3000);
+        notification.classList.remove(CSS_CLASSES.SHOW);
+    }, UI_CONSTANTS.NOTIFICATION_DURATION);
 }
 
 function formatBytes(bytes) {

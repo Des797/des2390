@@ -11,28 +11,31 @@ export const API_ENDPOINTS = {
     STOP_SCRAPER: '/api/stop',
     STATUS: '/api/status',
     POSTS: '/api/posts',
+    PENDING: '/api/pending',
+    SAVED: '/api/saved',
     SAVE_POST: '/api/save',
     DISCARD_POST: '/api/discard',
     DELETE_POST: '/api/delete',
-    POST_SIZE: '/api/post',
+    POST_SIZE: '/api/post/SIZE/size',
     AUTOCOMPLETE: '/api/autocomplete'
 };
 
-// UI Configuration
-export const UI_CONFIG = {
+// UI Constants
+export const UI_CONSTANTS = {
     NOTIFICATION_DURATION: 3000,
     STATUS_UPDATE_INTERVAL: 2000,
     SEARCH_DROPDOWN_DELAY: 200,
-    DEFAULT_POSTS_PER_PAGE: 24,
-    MAX_TAG_PREVIEW: 5,
-    MODAL_NAV_KEYS: {
-        CLOSE: 'Escape',
-        PREV: 'ArrowLeft',
-        NEXT: 'ArrowRight'
-    }
+    TAGS_PREVIEW_LIMIT: 5,
+    SEARCH_HISTORY_LIMIT: 10
 };
 
-// Sorting Options
+// File Type Constants
+export const FILE_TYPES = {
+    VIDEO: ['.mp4', '.webm'],
+    IMAGE: ['.jpg', '.jpeg', '.png', '.gif', '.webp']
+};
+
+// Sort Options
 export const SORT_OPTIONS = {
     DOWNLOAD_DESC: 'download-desc',
     DOWNLOAD_ASC: 'download-asc',
@@ -62,31 +65,42 @@ export const POST_STATUS = {
     DISCARDED: 'discarded'
 };
 
-// File Types
-export const VIDEO_EXTENSIONS = ['.mp4', '.webm'];
-export const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif'];
-
-// Bulk Operation Limits
-export const BULK_CONFIG = {
-    RATE_LIMIT_REQUESTS: 60,
-    RATE_LIMIT_DELAY: 1000,
-    PROGRESS_UPDATE_INTERVAL: 100
-};
-
-// External URLs
-export const EXTERNAL_URLS = {
-    RULE34_POST: 'https://rule34.xxx/index.php?page=post&s=view&id='
+// Notification Types
+export const NOTIFICATION_TYPES = {
+    SUCCESS: 'success',
+    ERROR: 'error',
+    WARNING: 'warning'
 };
 
 // Tab Names
-export const TABS = {
+export const TAB_NAMES = {
     SCRAPER: 'scraper',
     POSTS: 'posts',
     BLACKLIST: 'blacklist',
     TAG_HISTORY: 'taghistory'
 };
 
-// URL Parameter Names
+// Pagination
+export const PAGINATION = {
+    DEFAULT_PAGE: 1,
+    DEFAULT_PER_PAGE: 24,
+    PER_PAGE_OPTIONS: [12, 24, 48, 96]
+};
+
+// Bulk Operations
+export const BULK_OPERATIONS = {
+    SAVE: 'save',
+    DISCARD: 'discard',
+    DELETE: 'delete'
+};
+
+// Rate Limiting
+export const RATE_LIMIT = {
+    REQUESTS_PER_MINUTE: 60,
+    DELAY_AFTER_BATCH: 1000
+};
+
+// URL Parameters
 export const URL_PARAMS = {
     TAB: 'tab',
     PAGE: 'page',
@@ -95,12 +109,77 @@ export const URL_PARAMS = {
     SORT: 'sort'
 };
 
-// Notification Types
-export const NOTIFICATION_TYPES = {
-    SUCCESS: 'success',
-    ERROR: 'error',
-    WARNING: 'warning',
-    INFO: 'info'
+// Element IDs
+export const ELEMENT_IDS = {
+    // Config
+    USER_ID: 'userId',
+    API_KEY: 'apiKey',
+    TEMP_PATH: 'tempPath',
+    SAVE_PATH: 'savePath',
+    
+    // Buttons
+    SAVE_CONFIG_BTN: 'saveConfigBtn',
+    START_BTN: 'startBtn',
+    STOP_BTN: 'stopBtn',
+    ADD_BLACKLIST_BTN: 'addBlacklistBtn',
+    
+    // Inputs
+    SEARCH_TAGS: 'searchTags',
+    BLACKLIST_INPUT: 'blacklistInput',
+    POSTS_SEARCH_INPUT: 'postsSearchInput',
+    
+    // Dropdowns
+    SEARCH_DROPDOWN: 'searchDropdown',
+    POSTS_STATUS_FILTER: 'postsStatusFilter',
+    POSTS_SORT: 'postsSort',
+    POSTS_PER_PAGE: 'postsPerPage',
+    TAG_HISTORY_PER_PAGE: 'tagHistoryPerPage',
+    
+    // Display areas
+    BLACKLIST_TAGS: 'blacklistTags',
+    POSTS_GRID: 'postsGrid',
+    POSTS_TOTAL_RESULTS: 'postsTotalResults',
+    POSTS_PAGINATION: 'postsPagination',
+    TAG_HISTORY_LIST: 'tagHistoryList',
+    TAG_HISTORY_TOTAL: 'tagHistoryTotal',
+    TAG_HISTORY_PAGINATION: 'tagHistoryPagination',
+    
+    // Stats
+    STAT_PROCESSED: 'statProcessed',
+    STAT_SAVED: 'statSaved',
+    STAT_DISCARDED: 'statDiscarded',
+    STAT_SKIPPED: 'statSkipped',
+    STAT_REQUESTS: 'statRequests',
+    STAT_PAGE: 'statPage',
+    
+    // Alerts
+    MODE_ALERT: 'modeAlert',
+    STORAGE_ALERT: 'storageAlert',
+    
+    // Bulk controls
+    POSTS_BULK_CONTROLS: 'postsBulkControls',
+    POSTS_SELECTION_COUNT: 'postsSelectionCount',
+    BULK_SAVE_POSTS: 'bulkSavePosts',
+    BULK_DISCARD_POSTS: 'bulkDiscardPosts',
+    BULK_DELETE_POSTS: 'bulkDeletePosts',
+    CLEAR_SELECTION_POSTS: 'clearSelectionPosts',
+    POSTS_BULK_PROGRESS: 'postsBulkProgress',
+    POSTS_PROGRESS_BAR: 'postsProgressBar',
+    POSTS_PROGRESS_TEXT: 'postsProgressText',
+    CANCEL_BULK_POSTS: 'cancelBulkPosts',
+    
+    // Modal
+    IMAGE_MODAL: 'imageModal',
+    MODAL_CLOSE: 'modalClose',
+    MODAL_PREV: 'modalPrev',
+    MODAL_NEXT: 'modalNext',
+    MODAL_IMAGE: 'modalImage',
+    MODAL_VIDEO: 'modalVideo',
+    MODAL_INFO: 'modalInfo',
+    
+    // Notification
+    NOTIFICATION: 'notification',
+    NOTIFICATION_TEXT: 'notificationText'
 };
 
 // CSS Classes
@@ -109,6 +188,72 @@ export const CSS_CLASSES = {
     SHOW: 'show',
     SELECTED: 'selected',
     CHECKED: 'checked',
-    DISABLED: 'disabled',
-    HIDDEN: 'hidden'
+    ERROR: 'error',
+    WARNING: 'warning',
+    GREYED_OUT: 'greyed-out',
+    NAV_TAB: 'nav-tab',
+    TAB_CONTENT: 'tab-content',
+    GALLERY_ITEM: 'gallery-item',
+    SELECT_CHECKBOX: 'select-checkbox',
+    MEDIA_WRAPPER: 'media-wrapper',
+    TAG: 'tag',
+    EXPAND_TAGS: 'expand-tags',
+    GALLERY_ITEM_OWNER: 'gallery-item-owner',
+    SAVE_BTN: 'save-btn',
+    DISCARD_BTN: 'discard-btn',
+    VIEW_BTN: 'view-btn',
+    VIEW_R34_BTN: 'view-r34-btn',
+    DELETE_BTN: 'delete-btn',
+    SEARCH_DROPDOWN_ITEM: 'search-dropdown-item',
+    BLACKLIST_TAG: 'blacklist-tag',
+    NOTIFICATION: 'notification'
+};
+
+// External URLs
+export const EXTERNAL_URLS = {
+    RULE34_POST_VIEW: 'https://rule34.xxx/index.php?page=post&s=view&id='
+};
+
+// Default Values
+export const DEFAULTS = {
+    TAB: TAB_NAMES.SCRAPER,
+    PAGE: PAGINATION.DEFAULT_PAGE,
+    FILTER: FILTER_OPTIONS.ALL,
+    SEARCH: '',
+    SORT: SORT_OPTIONS.DOWNLOAD_DESC,
+    PER_PAGE: PAGINATION.DEFAULT_PER_PAGE
+};
+
+// Keyboard Keys
+export const KEYS = {
+    ESCAPE: 'Escape',
+    ENTER: 'Enter',
+    ARROW_LEFT: 'ArrowLeft',
+    ARROW_RIGHT: 'ArrowRight'
+};
+
+// Storage Keys
+export const STORAGE_KEYS = {
+    TAG_COUNTS: 'tagCounts'
+};
+
+export default {
+    API_ENDPOINTS,
+    UI_CONSTANTS,
+    FILE_TYPES,
+    SORT_OPTIONS,
+    FILTER_OPTIONS,
+    POST_STATUS,
+    NOTIFICATION_TYPES,
+    TAB_NAMES,
+    PAGINATION,
+    BULK_OPERATIONS,
+    RATE_LIMIT,
+    URL_PARAMS,
+    ELEMENT_IDS,
+    CSS_CLASSES,
+    EXTERNAL_URLS,
+    DEFAULTS,
+    KEYS,
+    STORAGE_KEYS
 };
