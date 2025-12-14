@@ -4,54 +4,45 @@ import logging
 from functools import wraps
 from flask import Flask, render_template, request, jsonify, send_from_directory, session, redirect, url_for
 
+# Import configuration
+from config import Config, get_config
+
 # Import our modules
 from database import Database
 from api_client import Rule34APIClient
 from file_manager import FileManager
 from scraper import Scraper
 
+# Get configuration
+config = get_config()
+
 # Configure logging
 logging.basicConfig(
-    level=logging.DEBUG,
-    format='%(asctime)s - %(levelname)s - %(message)s',
+    level=config.LOG_LEVEL,
+    format=config.LOG_FORMAT,
     handlers=[
-        logging.FileHandler('rule34_scraper.log'),
+        logging.FileHandler(config.LOG_FILE),
         logging.StreamHandler()
     ]
 )
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('FLASK_SECRET_KEY', 'your-secret-key-change-this')
-
-# Authentication credentials from environment
-AUTH_USERNAME = os.environ.get('AUTH_USERNAME', 'admin')
-AUTH_PASSWORD = os.environ.get('AUTH_PASSWORD', 'admin')
-
-# Elasticsearch Configuration (optional)
-ES_HOST = "localhost"
-ES_PORT = 9200
-ES_USER = "elastic"
-ES_PASSWORD = "o_UsKFunknykh_hSGBJP"
-ES_CA_CERT = r"D:\elasticsearch-9.2.1-windows-x86_64\elasticsearch-9.2.1\config\certs\http_ca.crt"
-ES_INDEX = "objects"
+app.secret_key = config.SECRET_KEY
 
 # Initialize Elasticsearch (optional)
 es = None
-try:
-    from elasticsearch import Elasticsearch
-    es = Elasticsearch(
-        [f"https://{ES_HOST}:{ES_PORT}"],
-        basic_auth=(ES_USER, ES_PASSWORD),
-        ca_certs=ES_CA_CERT,
-        verify_certs=True
-    )
-    logger.info("Elasticsearch connection established")
-except Exception as e:
-    logger.warning(f"Elasticsearch not available: {e}")
+es_config = config.get_elasticsearch_config()
+if es_config:
+    try:
+        from elasticsearch import Elasticsearch
+        es = Elasticsearch(**es_config)
+        logger.info("Elasticsearch connection established")
+    except Exception as e:
+        logger.warning(f"Elasticsearch not available: {e}")
 
 # Initialize modules
-db = Database()
+db = Database(config.DATABASE_PATH)
 api_client = Rule34APIClient()
 file_manager = FileManager()
 scraper = Scraper(api_client, file_manager, db, es)
@@ -83,7 +74,7 @@ def login_required(f):
 def login():
     if request.method == "POST":
         data = request.json
-        if data.get("username") == AUTH_USERNAME and data.get("password") == AUTH_PASSWORD:
+        if data.get("username") == config.AUTH_USERNAME and data.get("password") == config.AUTH_PASSWORD:
             session['logged_in'] = True
             return jsonify({"success": True})
         return jsonify({"success": False, "error": "Invalid credentials"}), 401
@@ -302,13 +293,7 @@ def serve_saved(date_folder, filename):
 if __name__ == "__main__":
     load_startup_config()
     
-    logger.info("=" * 60)
-    logger.info("Rule34 Scraper Starting")
-    logger.info(f"Auth: {AUTH_USERNAME} (set via AUTH_USERNAME env var)")
-    logger.info(f"Access from network: http://0.0.0.0:5000")
-    logger.info("=" * 60)
+    # Print configuration
+    config.print_info()
     
-    # Rebuild tag counts on startup (optional - can be slow)
-    # db.rebuild_tag_counts(file_manager.temp_path, file_manager.save_path)
-    
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    app.run(debug=config.DEBUG, host=config.HOST, port=config.PORT)
