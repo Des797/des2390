@@ -89,12 +89,15 @@
                         <span class="selection-count" id="postsSelectionCount">0 selected</span>
                     </div>
                     <div class="bulk-actions">
+                        <button class="btn-primary" id="selectAllPosts">✓ Select All on Page</button>
+                        <button class="btn-primary" id="selectAllPostsGlobal" style="display: none;">✓✓ Select All Matching</button>
+                        <button class="btn-secondary" id="invertSelectionPosts">⇄ Invert Selection</button>
+                        <button class="btn-secondary" id="clearSelectionPosts">Clear Selection</button>
                         <button class="btn-success" id="bulkSavePosts">💾 Save Selected</button>
                         <button class="btn-danger" id="bulkDiscardPosts">🗑️ Discard Selected</button>
                         <button class="btn-danger" id="bulkDeletePosts">🗑️ Delete Selected</button>
                         <button class="btn-warning greyed-out" disabled title="API not supported">❤️ Like Selected</button>
                         <button class="btn-primary greyed-out" disabled title="API not supported">✏️ Edit Tags</button>
-                        <button class="btn-secondary" id="clearSelectionPosts">Clear Selection</button>
                     </div>
                     <div class="bulk-progress" id="postsBulkProgress">
                         <div class="progress-bar-container">

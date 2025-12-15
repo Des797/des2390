@@ -2,9 +2,11 @@
 import { state, updateURLState } from './state.js';
 import { showNotification, applySearchFilter } from './utils.js';
 import { loadPosts as apiLoadPosts, savePost as apiSavePost, discardPost as apiDiscardPost, deletePost as apiDeletePost, getPostSize, loadTagCounts } from './api.js';
-import { renderPost, renderPaginationButtons } from './posts_renderer.js';
-import { attachPostEventListeners, setupPaginationListeners } from './event_handlers.js';
+import { renderPost, renderPaginationButtons, setupVideoPreviewListeners } from './posts_renderer.js';
+import { attachPostEventListeners, setupPaginationListeners, setupMediaErrorHandlers } from './event_handlers.js';
 import { ELEMENT_IDS, URL_PARAMS, POST_STATUS, CSS_CLASSES, PAGINATION, SORT_ORDER } from './constants.js';
+
+window.setupVideoPreviewListeners = setupVideoPreviewListeners; 
 
 // Sorting Functions
 async function sortPosts(posts, sortBy, order) {
@@ -109,7 +111,10 @@ async function loadPosts(updateURL = true) {
             // Pass sortBy and searchQuery to renderPost for conditional info display
             grid.innerHTML = pagePosts.map(p => renderPost(p, sortBy, searchQuery)).join('');
             attachPostEventListeners();
-            setupVideoPreviewListeners();
+            setupMediaErrorHandlers();
+            requestAnimationFrame(() => {
+                setupVideoPreviewListeners();
+            });
         }
         
         document.getElementById(ELEMENT_IDS.POSTS_TOTAL_RESULTS).textContent = `Total: ${posts.length} posts`;
@@ -130,6 +135,7 @@ async function loadPosts(updateURL = true) {
         }
     } catch (error) {
         showNotification('Failed to load posts', 'error');
+        console.error(error); 
     }
 }
 
@@ -147,41 +153,6 @@ function toggleSortOrder() {
     state.postsSortOrder = state.postsSortOrder === SORT_ORDER.ASC ? SORT_ORDER.DESC : SORT_ORDER.ASC;
     state.postsPage = 1; // Reset to first page when changing sort
     loadPosts();
-}
-
-// Setup video preview on hover
-function setupVideoPreviewListeners() {
-    const mediaWrappers = document.querySelectorAll(`.${CSS_CLASSES.MEDIA_WRAPPER}`);
-    
-    mediaWrappers.forEach(wrapper => {
-        const video = wrapper.querySelector('video[data-video-src]');
-        if (!video) return;
-        
-        const img = wrapper.querySelector('img');
-        let hoverTimeout = null;
-        
-        wrapper.addEventListener('mouseenter', () => {
-            hoverTimeout = setTimeout(() => {
-                if (img) img.classList.add('preview-hidden');
-                video.style.display = 'block';
-                video.classList.add('preview-playing');
-                video.play().catch(err => console.log('Video play failed:', err));
-            }, 3000); // 3 second delay
-        });
-        
-        wrapper.addEventListener('mouseleave', () => {
-            if (hoverTimeout) {
-                clearTimeout(hoverTimeout);
-                hoverTimeout = null;
-            }
-            
-            video.pause();
-            video.currentTime = 0;
-            video.style.display = 'none';
-            video.classList.remove('preview-playing');
-            if (img) img.classList.remove('preview-hidden');
-        });
-    });
 }
 
 // Post Actions
@@ -227,10 +198,74 @@ function clearSelection() {
     updateBulkControls();
 }
 
+function selectAllOnPage() {
+    // Select all posts currently visible on the page
+    document.querySelectorAll(`.${CSS_CLASSES.GALLERY_ITEM}`).forEach(item => {
+        const postId = parseInt(item.dataset.postId);
+        state.selectedPosts.add(postId);
+        item.classList.add(CSS_CLASSES.SELECTED);
+        item.querySelector(`.${CSS_CLASSES.SELECT_CHECKBOX}`).classList.add(CSS_CLASSES.CHECKED);
+    });
+    
+    updateBulkControls();
+}
+
+function selectAllMatching() {
+    // Select all posts that match current filters across all pages
+    state.allPosts.forEach(post => {
+        state.selectedPosts.add(post.id);
+    });
+    
+    // Update UI for currently visible posts
+    document.querySelectorAll(`.${CSS_CLASSES.GALLERY_ITEM}`).forEach(item => {
+        const postId = parseInt(item.dataset.postId);
+        if (state.selectedPosts.has(postId)) {
+            item.classList.add(CSS_CLASSES.SELECTED);
+            item.querySelector(`.${CSS_CLASSES.SELECT_CHECKBOX}`).classList.add(CSS_CLASSES.CHECKED);
+        }
+    });
+    
+    updateBulkControls();
+}
+
+function invertSelection() {
+    // Get all posts currently on the page
+    const pagePostIds = new Set();
+    document.querySelectorAll(`.${CSS_CLASSES.GALLERY_ITEM}`).forEach(item => {
+        pagePostIds.add(parseInt(item.dataset.postId));
+    });
+    
+    // Invert selection
+    pagePostIds.forEach(postId => {
+        if (state.selectedPosts.has(postId)) {
+            state.selectedPosts.delete(postId);
+        } else {
+            state.selectedPosts.add(postId);
+        }
+    });
+    
+    // Update UI
+    document.querySelectorAll(`.${CSS_CLASSES.GALLERY_ITEM}`).forEach(item => {
+        const postId = parseInt(item.dataset.postId);
+        const checkbox = item.querySelector(`.${CSS_CLASSES.SELECT_CHECKBOX}`);
+        
+        if (state.selectedPosts.has(postId)) {
+            item.classList.add(CSS_CLASSES.SELECTED);
+            checkbox.classList.add(CSS_CLASSES.CHECKED);
+        } else {
+            item.classList.remove(CSS_CLASSES.SELECTED);
+            checkbox.classList.remove(CSS_CLASSES.CHECKED);
+        }
+    });
+    
+    updateBulkControls();
+}
+
 function updateBulkControls() {
     const count = state.selectedPosts.size;
     const controls = document.getElementById(ELEMENT_IDS.POSTS_BULK_CONTROLS);
     const countSpan = document.getElementById(ELEMENT_IDS.POSTS_SELECTION_COUNT);
+    const selectAllGlobalBtn = document.getElementById(ELEMENT_IDS.SELECT_ALL_POSTS_GLOBAL);
     
     // Show/hide action buttons based on selection
     const saveBtn = document.getElementById(ELEMENT_IDS.BULK_SAVE_POSTS);
@@ -240,6 +275,15 @@ function updateBulkControls() {
     if (count > 0) {
         controls.style.display = 'block';
         countSpan.textContent = `${count} selected`;
+        
+        // Show "Select All Matching" button if not all are selected
+        const totalMatchingPosts = state.allPosts.length;
+        if (count < totalMatchingPosts && count > 0) {
+            selectAllGlobalBtn.style.display = 'inline-block';
+            selectAllGlobalBtn.textContent = `✓✓ Select All Matching (${totalMatchingPosts} total)`;
+        } else {
+            selectAllGlobalBtn.style.display = 'none';
+        }
         
         // Check if any selected posts are pending or saved
         const selectedPosts = Array.from(state.selectedPosts).map(id => {
@@ -254,6 +298,7 @@ function updateBulkControls() {
         deleteBtn.style.display = hasSaved ? 'inline-block' : 'none';
     } else {
         controls.style.display = 'none';
+        selectAllGlobalBtn.style.display = 'none';
     }
 }
 
@@ -323,12 +368,14 @@ function renderPagination(total, perPage, currentPage) {
 export {
     loadPosts,
     clearSelection,
+    selectAllOnPage,
+    selectAllMatching,
+    invertSelection,
     filterByTag,
     filterByOwner,
     savePostAction,
     discardPostAction,
     deletePostAction,
     updateBulkControls,
-    toggleSortOrder,
-    setupVideoPreviewListeners
+    toggleSortOrder
 };

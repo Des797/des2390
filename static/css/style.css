@@ -434,9 +434,9 @@ button.greyed-out {
 .gallery-grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, 180px);
-    grid-auto-rows: 10px;
     gap: 12px;
     justify-content: center;
+    align-items: start;
 }
 
 .gallery-item {
@@ -484,7 +484,7 @@ button.greyed-out {
 .gallery-item-media video {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;
     cursor: pointer;
     background: #000;
     display: block;
@@ -513,24 +513,6 @@ button.greyed-out {
     100% { transform: rotate(360deg); }
 }
 
-.gallery-item-media .media-error {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    color: #ef4444;
-    font-size: 12px;
-    text-align: center;
-    padding: 10px;
-}
-
-.gallery-item-media .media-error::before {
-    content: '⚠️';
-    display: block;
-    font-size: 24px;
-    margin-bottom: 5px;
-}
-
 .gallery-item-media .video-overlay {
     position: absolute;
     top: 50%;
@@ -544,6 +526,7 @@ button.greyed-out {
     align-items: center;
     justify-content: center;
     pointer-events: none;
+    z-index: 2;
 }
 
 .gallery-item-media .video-overlay::after {
@@ -602,11 +585,11 @@ button.greyed-out {
 }
 
 .gallery-item-info {
-    padding: 10px;
-    flex: 1;
+    padding: 8px;
     display: flex;
     flex-direction: column;
     font-size: 11px;
+    gap: 4px;
 }
 
 .gallery-item-title {
@@ -644,11 +627,9 @@ button.greyed-out {
 .gallery-item-tags {
     font-size: 10px;
     color: #64748b;
-    margin-bottom: 6px;
     cursor: pointer;
-    flex: 1;
     overflow: hidden;
-    max-height: 40px;
+    line-height: 1.4;
 }
 
 .gallery-item-tags .tag {
@@ -668,8 +649,7 @@ button.greyed-out {
 
 .gallery-item-actions {
     display: flex;
-    gap: 6px;
-    margin-top: auto;
+    gap: 4px;
     flex-wrap: wrap;
 }
 
@@ -938,11 +918,15 @@ button.greyed-out {
 
 /* Bulk Operations */
 .bulk-controls {
+    position: sticky;
+    top: 20px;
+    z-index: 100;
     background: #1e293b;
     border: 1px solid #334155;
     border-radius: 6px;
     padding: 15px;
     margin-bottom: 20px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 .bulk-controls-header {

@@ -6,6 +6,8 @@ import { initializeEventListeners } from './event_handlers.js';
 import { switchTab } from './navigation.js';
 import { loadTagCounts } from './api.js';
 import { UI_CONSTANTS } from './constants.js';
+import { setupVideoPreviewListeners } from './posts_renderer.js';
+
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {

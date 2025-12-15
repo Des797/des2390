@@ -41,72 +41,144 @@ function formatVideoDuration(seconds) {
 }
 
 /**
+ * Setup dynamic video thumbnails and hover-to-play
+ */
+function setupVideoPreviewListeners() {
+    document
+        .querySelectorAll('.media-video > canvas.video-thumbnail-canvas')
+        .forEach(canvas => {
+            const container = canvas.closest('.media-video');
+            const videoEl = container.querySelector('video.video-preview');
+            const overlay = container.querySelector('.video-overlay');
+
+            if (!videoEl) return;
+
+            const ctx = canvas.getContext('2d');
+
+            videoEl.muted = true;
+            videoEl.playsInline = true;
+            videoEl.preload = 'metadata';
+
+            videoEl.addEventListener('loadedmetadata', () => {
+                if (!videoEl.videoWidth || !videoEl.videoHeight) return;
+
+                // Optionally store container size for JS scaling
+                canvas.width = videoEl.videoWidth;
+                canvas.height = videoEl.videoHeight;
+                videoEl.currentTime = 0;
+            });
+
+            videoEl.addEventListener('seeked', () => {
+                try {
+                    // Fit video frame inside canvas (aspect-ratio correct)
+                    const containerWidth = container.clientWidth;
+                    const containerHeight = container.clientHeight;
+                    const videoRatio = videoEl.videoWidth / videoEl.videoHeight;
+                    const containerRatio = containerWidth / containerHeight;
+
+                    let drawWidth, drawHeight;
+
+                    if (containerRatio > videoRatio) {
+                        drawHeight = containerHeight;
+                        drawWidth = drawHeight * videoRatio;
+                    } else {
+                        drawWidth = containerWidth;
+                        drawHeight = drawWidth / videoRatio;
+                    }
+
+                    canvas.width = drawWidth;
+                    canvas.height = drawHeight;
+
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    ctx.drawImage(videoEl, 0, 0, drawWidth, drawHeight);
+
+                    videoEl.style.display = 'none';
+                    canvas.style.display = 'block';
+
+                    if (overlay) overlay.style.display = 'flex';
+                } catch (err) {
+                    console.warn('Thumbnail draw failed', err);
+                }
+            });
+
+            container.addEventListener('mouseenter', () => {
+                canvas.style.display = 'none';
+                videoEl.style.display = 'block';
+                if (overlay) overlay.style.display = 'none';
+                videoEl.play().catch(() => {});
+            });
+
+            container.addEventListener('mouseleave', () => {
+                videoEl.pause();
+                videoEl.currentTime = 0;
+                videoEl.style.display = 'none';
+                canvas.style.display = 'block';
+                if (overlay) overlay.style.display = 'flex';
+            });
+
+            videoEl.load();
+        });
+}
+
+
+/**
  * Calculate grid row span based on image aspect ratio
  */
 function calculateRowSpan(width, height) {
     const aspectRatio = height / width;
     const cardWidth = UI_CONSTANTS.CARD_BASE_WIDTH;
     const cardHeight = cardWidth * aspectRatio;
-    const rowSpan = Math.ceil(cardHeight / UI_CONSTANTS.CARD_ROW_HEIGHT);
-    
-    // Add extra rows for info section (approximately 8 rows for compact info)
-    return rowSpan + 8;
+    const mediaRowSpan = Math.ceil(cardHeight / UI_CONSTANTS.CARD_ROW_HEIGHT);
+
+    // Remove extra rows; rely on natural height of info section
+    return mediaRowSpan;
 }
 
 /**
- * Render media HTML (video or image) with loading/error states
+ * Render media HTML (video or image) with hover-to-play for videos
  */
 function renderMedia(post) {
     const mediaUrl = getMediaUrl(post);
     const isVideo = isVideoFile(post.file_type);
     const isGif = isGifFile(post.file_type);
     const duration = post.duration ? formatVideoDuration(post.duration) : '';
-    
-    // Determine media class for border styling
+
     let mediaClass = '';
     if (isVideo) mediaClass = 'media-video';
     else if (isGif) mediaClass = 'media-gif';
-    
+
     const loadingOverlay = `<div class="media-loading">Loading...</div>`;
-    const errorOverlay = `<div class="media-error">No Thumbnail Found</div>`;
     const durationBadge = duration ? `<div class="video-duration">${duration}</div>` : '';
-    
+
     if (isVideo) {
         return `
-            <div class="${mediaClass}">
+            <div class="${mediaClass}" data-post-id="${post.id}">
                 ${loadingOverlay}
-                <img src="${mediaUrl}" 
-                     alt="Post ${post.id}" 
-                     loading="lazy" 
-                     data-post-id="${post.id}"
-                     onerror="this.style.display='none'; this.nextElementSibling.style.display='block';"
-                     onload="this.previousElementSibling.style.display='none';">
-                ${errorOverlay}
+                <canvas class="video-thumbnail-canvas" data-post-id="${post.id}"></canvas>
                 <video src="${mediaUrl}" 
                        muted 
                        loop 
-                       style="display:none;" 
-                       data-video-src="${mediaUrl}"
-                       data-post-id="${post.id}"></video>
+                       class="video-preview" 
+                       data-post-id="${post.id}" 
+                       style="display:none;">
+                </video>
                 <div class="video-overlay"></div>
                 ${durationBadge}
             </div>
         `;
     }
-    
+
     return `
-        <div class="${mediaClass}">
+        <div class="${mediaClass}" data-post-id="${post.id}">
             ${loadingOverlay}
             <img src="${mediaUrl}" 
                  alt="Post ${post.id}" 
-                 loading="lazy"
-                 data-post-id="${post.id}"
-                 onerror="this.style.display='none'; this.nextElementSibling.style.display='block';"
-                 onload="this.previousElementSibling.style.display='none';">
-            ${errorOverlay}
+                 loading="lazy" 
+                 data-post-id="${post.id}">
         </div>
     `;
 }
+
 
 /**
  * Render post title
@@ -384,7 +456,10 @@ export {
     renderPaginationButtons,
     renderTagHistoryItem,
     renderExpandedTags,
+    setupVideoPreviewListeners,
     getMediaUrl,
     isVideoFile,
     isGifFile
 };
+
+window.setupVideoPreviewListeners = setupVideoPreviewListeners;

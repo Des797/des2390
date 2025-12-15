@@ -2,11 +2,11 @@
 import { state } from './state.js';
 import { saveConfig, addBlacklistTags, showSearchDropdown, hideSearchDropdown } from './config.js';
 import { startScraper, stopScraper, loadTagHistory } from './scraper_ui.js';
-import { loadPosts, clearSelection, filterByTag, filterByOwner, savePostAction, discardPostAction, deletePostAction, toggleSortOrder } from './posts.js';
+import { loadPosts, clearSelection, selectAllOnPage, selectAllMatching, invertSelection, filterByTag, filterByOwner, savePostAction, discardPostAction, deletePostAction, toggleSortOrder } from './posts.js';
 import { bulkSavePosts, bulkDiscardPosts, bulkDeletePosts } from './bulk.js';
 import { showFullMedia, navigateModal, closeModal } from './modal.js';
 import { switchTab } from './navigation.js';
-import { renderExpandedTags } from './posts_renderer.js';
+import { renderExpandedTags, setupVideoPreviewListeners } from './posts_renderer.js';
 import { ELEMENT_IDS, CSS_CLASSES, KEYS } from './constants.js';
 
 /**
@@ -116,6 +116,26 @@ function attachPostEventListeners() {
 }
 
 /**
+ * Attach media error handling after posts are rendered
+ */
+function setupMediaErrorHandlers() {
+    // Image thumbnails (including video thumbnails)
+    document.querySelectorAll('.gallery-item-media img').forEach(img => {
+        img.addEventListener('error', () => {
+            img.style.opacity = '0.5';
+            console.warn(`Image/thumbnail failed to load for post ${img.dataset.postId}`);
+        });
+    });
+
+    // Video elements
+    document.querySelectorAll('.gallery-item-media video').forEach(video => {
+        video.addEventListener('error', () => {
+            console.warn(`Video failed to load for post ${video.dataset.postId}`);
+        });
+    });
+}
+
+/**
  * Attach modal tag click listeners
  */
 function attachModalTagListeners() {
@@ -219,10 +239,13 @@ function setupTagHistoryListeners() {
  * Setup bulk action listeners
  */
 function setupBulkActionListeners() {
+    document.getElementById(ELEMENT_IDS.SELECT_ALL_POSTS).addEventListener('click', selectAllOnPage);
+    document.getElementById(ELEMENT_IDS.SELECT_ALL_POSTS_GLOBAL).addEventListener('click', selectAllMatching);
+    document.getElementById(ELEMENT_IDS.INVERT_SELECTION_POSTS).addEventListener('click', invertSelection);
+    document.getElementById(ELEMENT_IDS.CLEAR_SELECTION_POSTS).addEventListener('click', clearSelection);
     document.getElementById(ELEMENT_IDS.BULK_SAVE_POSTS).addEventListener('click', bulkSavePosts);
     document.getElementById(ELEMENT_IDS.BULK_DISCARD_POSTS).addEventListener('click', bulkDiscardPosts);
     document.getElementById(ELEMENT_IDS.BULK_DELETE_POSTS).addEventListener('click', bulkDeletePosts);
-    document.getElementById(ELEMENT_IDS.CLEAR_SELECTION_POSTS).addEventListener('click', clearSelection);
 }
 
 /**
@@ -287,5 +310,6 @@ export {
     attachModalTagListeners,
     setupPaginationListeners,
     initializeEventListeners,
+    setupMediaErrorHandlers,
     toggleSelection
 };

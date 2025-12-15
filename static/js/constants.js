@@ -165,6 +165,9 @@ export const ELEMENT_IDS = {
     // Bulk controls
     POSTS_BULK_CONTROLS: 'postsBulkControls',
     POSTS_SELECTION_COUNT: 'postsSelectionCount',
+    SELECT_ALL_POSTS: 'selectAllPosts',
+    SELECT_ALL_POSTS_GLOBAL: 'selectAllPostsGlobal',
+    INVERT_SELECTION_POSTS: 'invertSelectionPosts',
     BULK_SAVE_POSTS: 'bulkSavePosts',
     BULK_DISCARD_POSTS: 'bulkDiscardPosts',
     BULK_DELETE_POSTS: 'bulkDeletePosts',
