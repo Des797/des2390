@@ -1,6 +1,8 @@
 """Route handlers for the Flask application"""
 import logging
-from flask import request, jsonify, render_template, session, redirect, url_for, send_from_directory
+import json
+import time
+from flask import request, jsonify, render_template, session, redirect, url_for, send_from_directory, Response
 from functools import wraps
 from exceptions import ValidationError, PostNotFoundError, StorageError
 from validators import validate_username, validate_password
@@ -147,6 +149,66 @@ def create_routes(app, config, services):
             return jsonify(posts)
         except ValidationError as e:
             return jsonify({"error": str(e)}), 400
+
+    @app.route("/api/posts/stream")
+    @login_required
+    def stream_posts():
+        """Stream posts with progress updates - much faster for large datasets"""
+        filter_type = request.args.get('filter', 'all')
+        
+        def generate():
+            try:
+                start_time = time.time()
+                
+                # Send initial status
+                yield f"data: {json.dumps({'type': 'status', 'message': 'Starting to load posts...'})}\n\n"
+                
+                # Get posts based on filter
+                if filter_type == 'pending':
+                    yield f"data: {json.dumps({'type': 'status', 'message': 'Loading pending posts...'})}\n\n"
+                    posts = file_manager.get_pending_posts()
+                    
+                elif filter_type == 'saved':
+                    yield f"data: {json.dumps({'type': 'status', 'message': 'Loading saved posts...'})}\n\n"
+                    posts = file_manager.get_saved_posts()
+                    
+                else:  # all
+                    yield f"data: {json.dumps({'type': 'status', 'message': 'Loading pending posts...'})}\n\n"
+                    pending = file_manager.get_pending_posts()
+                    
+                    yield f"data: {json.dumps({'type': 'status', 'message': f'Loaded {len(pending)} pending. Loading saved posts...'})}\n\n"
+                    saved = file_manager.get_saved_posts()
+                    
+                    yield f"data: {json.dumps({'type': 'status', 'message': f'Loaded {len(saved)} saved. Combining...'})}\n\n"
+                    posts = pending + saved
+                
+                total = len(posts)
+                chunk_size = 100  # Send 100 posts at a time
+                
+                logger.info(f"Streaming {total} posts in chunks of {chunk_size}")
+                
+                # Send posts in chunks
+                for i in range(0, total, chunk_size):
+                    chunk = posts[i:i + chunk_size]
+                    progress = min(i + chunk_size, total)
+                    
+                    yield f"data: {json.dumps({'type': 'chunk', 'posts': chunk, 'progress': progress, 'total': total})}\n\n"
+                    time.sleep(0.01)  # Small delay to allow browser to process
+                
+                load_time = time.time() - start_time
+                logger.info(f"Finished streaming {total} posts in {load_time:.2f}s")
+                
+                # Send completion
+                yield f"data: {json.dumps({'type': 'complete', 'total': total})}\n\n"
+                
+            except Exception as e:
+                logger.error(f"Streaming error: {e}", exc_info=True)
+                yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+        
+        return Response(generate(), mimetype='text/event-stream', headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no'
+        })
     
     @app.route("/api/pending")
     @login_required

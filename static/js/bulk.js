@@ -42,17 +42,21 @@ async function performBulkOperation(operation, posts) {
     progressContainer.classList.add(CSS_CLASSES.SHOW);
     
     let processed = 0;
+    let succeeded = 0;
+    let failed = 0;
     let cancelled = false;
     
     const cancelBtn = document.getElementById(ELEMENT_IDS.CANCEL_BULK_POSTS);
     cancelBtn.onclick = () => { cancelled = true; };
     
-    const estimatedTime = Math.ceil(posts.length / RATE_LIMIT.REQUESTS_PER_MINUTE) * 60;
-    progressText.textContent = `Processing ${posts.length} posts... Est. ${Math.ceil(estimatedTime / 60)} min`;
+    // Initialize progress display
+    progressText.textContent = `Processing 0 / ${posts.length} posts...`;
+    progressBar.style.width = '0%';
+    progressBar.textContent = '0%';
     
     for (const post of posts) {
         if (cancelled) {
-            showNotification('Operation cancelled', 'warning');
+            showNotification(`Operation cancelled. ${succeeded} succeeded, ${failed} failed.`, 'warning');
             break;
         }
         
@@ -61,24 +65,29 @@ async function performBulkOperation(operation, posts) {
             
             if (operation === BULK_OPERATIONS.SAVE) {
                 await savePost(postId);
+                succeeded++;
             } else if (operation === BULK_OPERATIONS.DISCARD) {
                 await discardPost(postId);
+                succeeded++;
             } else if (operation === BULK_OPERATIONS.DELETE) {
                 await deletePost(post.id, post.date_folder);
-            }
-            
-            processed++;
-            const percent = Math.round((processed / posts.length) * 100);
-            progressBar.style.width = percent + '%';
-            progressBar.textContent = percent + '%';
-            progressText.textContent = `${processed} / ${posts.length} completed`;
-            
-            // Rate limiting delay
-            if (processed % RATE_LIMIT.REQUESTS_PER_MINUTE === 0) {
-                await new Promise(resolve => setTimeout(resolve, RATE_LIMIT.DELAY_AFTER_BATCH));
+                succeeded++;
             }
         } catch (error) {
             console.error(`Failed to ${operation} post:`, error);
+            failed++;
+        }
+        
+        processed++;
+        const percent = Math.round((processed / posts.length) * 100);
+        progressBar.style.width = percent + '%';
+        progressBar.textContent = percent + '%';
+        progressText.textContent = `${processed} / ${posts.length} completed (${succeeded} succeeded, ${failed} failed)`;
+        
+        // Rate limiting delay - only after every batch to avoid slowing down too much
+        if (processed % RATE_LIMIT.REQUESTS_PER_MINUTE === 0 && processed < posts.length) {
+            progressText.textContent = `${processed} / ${posts.length} completed - Rate limit pause...`;
+            await new Promise(resolve => setTimeout(resolve, RATE_LIMIT.DELAY_AFTER_BATCH));
         }
     }
     
@@ -88,7 +97,9 @@ async function performBulkOperation(operation, posts) {
     
     await loadPosts();
     
-    showNotification(`Bulk ${operation} completed: ${processed} posts`);
+    if (!cancelled) {
+        showNotification(`Bulk ${operation} completed: ${succeeded} succeeded, ${failed} failed`);
+    }
 }
 
 export { bulkSavePosts, bulkDiscardPosts, bulkDeletePosts };

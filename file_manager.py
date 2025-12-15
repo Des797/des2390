@@ -2,9 +2,11 @@ import os
 import json
 import shutil
 import logging
+import time
 from pathlib import Path
 from datetime import datetime
 from typing import List, Dict, Any, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 logger = logging.getLogger(__name__)
 
@@ -64,55 +66,114 @@ class FileManager:
             return None
     
     def get_pending_posts(self) -> List[Dict[str, Any]]:
-        """Get all pending posts from temp directory"""
+        """Get all pending posts from temp directory - OPTIMIZED"""
         if not self.temp_path or not os.path.exists(self.temp_path):
             return []
         
+        start_time = time.time()
         pending = []
-        for filename in os.listdir(self.temp_path):
-            if filename.endswith(".json"):
-                json_path = os.path.join(self.temp_path, filename)
+        
+        # Get all JSON files first
+        try:
+            json_files = [f for f in os.listdir(self.temp_path) if f.endswith(".json")]
+        except Exception as e:
+            logger.error(f"Failed to list temp directory: {e}")
+            return []
+        
+        if not json_files:
+            return []
+        
+        logger.info(f"Found {len(json_files)} pending post files")
+        
+        # Load files in parallel for better performance
+        def load_post(filename):
+            json_path = os.path.join(self.temp_path, filename)
+            try:
+                with open(json_path, 'r') as f:
+                    post_data = json.load(f)
+                    post_data['timestamp'] = os.path.getmtime(json_path)
+                    post_data['status'] = 'pending'
+                    return post_data
+            except Exception as e:
+                logger.error(f"Failed to load pending post {filename}: {e}")
+                return None
+        
+        # Use ThreadPoolExecutor for parallel file reading
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(load_post, filename) for filename in json_files]
+            for future in as_completed(futures):
+                result = future.result()
+                if result:
+                    pending.append(result)
+        
+        load_time = time.time() - start_time
+        logger.info(f"Loaded {len(pending)} pending posts in {load_time:.2f}s")
+        return pending
+    
+    def get_saved_posts(self) -> List[Dict[str, Any]]:
+        """Get all saved posts from save directory - OPTIMIZED"""
+        if not self.save_path or not os.path.exists(self.save_path):
+            return []
+        
+        start_time = time.time()
+        saved = []
+        
+        # Get all date folders
+        try:
+            date_folders = [f for f in os.listdir(self.save_path) 
+                           if os.path.isdir(os.path.join(self.save_path, f))]
+        except Exception as e:
+            logger.error(f"Failed to list save directory: {e}")
+            return []
+        
+        if not date_folders:
+            return []
+        
+        logger.info(f"Found {len(date_folders)} date folders")
+        
+        def load_folder_posts(date_folder):
+            folder_path = os.path.join(self.save_path, date_folder)
+            folder_posts = []
+            
+            try:
+                json_files = [f for f in os.listdir(folder_path) if f.endswith(".json")]
+            except Exception as e:
+                logger.error(f"Failed to list folder {date_folder}: {e}")
+                return []
+            
+            for filename in json_files:
+                json_path = os.path.join(folder_path, filename)
                 try:
                     with open(json_path, 'r') as f:
                         post_data = json.load(f)
                         post_data['timestamp'] = os.path.getmtime(json_path)
-                        post_data['status'] = 'pending'
-                        pending.append(post_data)
+                        post_data['date_folder'] = date_folder
+                        post_data['status'] = 'saved'
+                        
+                        # Ensure file_path is set
+                        post_id = post_data['id']
+                        file_ext = post_data.get('file_type', '.jpg')
+                        post_data['file_path'] = os.path.join(folder_path, f"{post_id}{file_ext}")
+                        
+                        folder_posts.append(post_data)
                 except Exception as e:
-                    logger.error(f"Failed to load pending post {filename}: {e}")
-        
-        return pending
-    
-    def get_saved_posts(self) -> List[Dict[str, Any]]:
-        """Get all saved posts from save directory"""
-        if not self.save_path or not os.path.exists(self.save_path):
-            return []
-        
-        saved = []
-        for date_folder in os.listdir(self.save_path):
-            folder_path = os.path.join(self.save_path, date_folder)
-            if not os.path.isdir(folder_path):
-                continue
+                    logger.error(f"Failed to load saved post {filename}: {e}")
             
-            for filename in os.listdir(folder_path):
-                if filename.endswith(".json"):
-                    json_path = os.path.join(folder_path, filename)
-                    try:
-                        with open(json_path, 'r') as f:
-                            post_data = json.load(f)
-                            post_data['timestamp'] = os.path.getmtime(json_path)
-                            post_data['date_folder'] = date_folder
-                            post_data['status'] = 'saved'
-                            
-                            # Ensure file_path is set
-                            post_id = post_data['id']
-                            file_ext = post_data.get('file_type', '.jpg')
-                            post_data['file_path'] = os.path.join(folder_path, f"{post_id}{file_ext}")
-                            
-                            saved.append(post_data)
-                    except Exception as e:
-                        logger.error(f"Failed to load saved post {filename}: {e}")
+            return folder_posts
         
+        # Load folders in parallel
+        with ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(load_folder_posts, folder) for folder in date_folders]
+            for i, future in enumerate(as_completed(futures), 1):
+                folder_posts = future.result()
+                saved.extend(folder_posts)
+                
+                # Log progress for large datasets
+                if i % 10 == 0 or i == len(date_folders):
+                    logger.info(f"Processed {i}/{len(date_folders)} folders, {len(saved)} posts so far")
+        
+        load_time = time.time() - start_time
+        logger.info(f"Loaded {len(saved)} saved posts in {load_time:.2f}s")
         return saved
     
     def get_all_posts(self) -> List[Dict[str, Any]]:

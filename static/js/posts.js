@@ -1,7 +1,7 @@
 // Posts Management
 import { state, updateURLState } from './state.js';
 import { showNotification, applySearchFilter } from './utils.js';
-import { loadPosts as apiLoadPosts, savePost as apiSavePost, discardPost as apiDiscardPost, deletePost as apiDeletePost, getPostSize, loadTagCounts } from './api.js';
+import { loadPosts as apiLoadPosts, loadPostsStreaming, savePost as apiSavePost, discardPost as apiDiscardPost, deletePost as apiDeletePost, getPostSize, loadTagCounts } from './api.js';
 import { renderPost, renderPaginationButtons, setupVideoPreviewListeners } from './posts_renderer.js';
 import { attachPostEventListeners, setupPaginationListeners, setupMediaErrorHandlers } from './event_handlers.js';
 import { ELEMENT_IDS, URL_PARAMS, POST_STATUS, CSS_CLASSES, PAGINATION, SORT_ORDER } from './constants.js';
@@ -10,18 +10,37 @@ window.setupVideoPreviewListeners = setupVideoPreviewListeners;
 
 // Sorting Functions
 async function sortPosts(posts, sortBy, order) {
-    // For size sorting, fetch sizes first
+    // For size sorting, fetch sizes first with progress tracking
     if (sortBy === 'size') {
+        const grid = document.getElementById(ELEMENT_IDS.POSTS_GRID);
+        let fetched = 0;
+        const total = posts.filter(p => !state.postSizes[p.id]).length;
+        
+        if (total > 0) {
+            console.log(`Fetching sizes for ${total} posts...`);
+        }
+        
         await Promise.all(posts.map(async p => {
             if (!state.postSizes[p.id]) {
                 try {
                     const result = await getPostSize(p.id);
                     state.postSizes[p.id] = result.size;
+                    fetched++;
+                    
+                    // Update progress every 10 posts
+                    if (fetched % 10 === 0 && total > 20) {
+                        const percent = Math.round((fetched / total) * 100);
+                        grid.innerHTML = `<p style="color: #10b981; text-align: center; grid-column: 1/-1; font-size: 18px;">⏳ Calculating file sizes: ${fetched}/${total} (${percent}%)<br><span style="font-size: 14px; color: #94a3b8;">This may take a while</span></p>`;
+                    }
                 } catch (e) {
                     state.postSizes[p.id] = 0;
                 }
             }
         }));
+        
+        if (total > 0) {
+            console.log(`Finished fetching ${fetched} file sizes`);
+        }
     }
     
     return posts.sort((a, b) => {
@@ -61,14 +80,69 @@ async function sortPosts(posts, sortBy, order) {
     });
 }
 
+// Render posts progressively in batches
+async function renderPostsProgressively(grid, posts, sortBy, searchQuery) {
+    const BATCH_SIZE = 10; // Render 10 posts at a time
+    grid.innerHTML = ''; // Clear loading message
+    
+    for (let i = 0; i < posts.length; i += BATCH_SIZE) {
+        const batch = posts.slice(i, i + BATCH_SIZE);
+        const batchHtml = batch.map(p => renderPost(p, sortBy, searchQuery)).join('');
+        grid.insertAdjacentHTML('beforeend', batchHtml);
+        
+        // Allow browser to render before next batch
+        await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    
+    // Attach event listeners after all posts are rendered
+    attachPostEventListeners();
+    setupMediaErrorHandlers();
+    requestAnimationFrame(() => {
+        setupVideoPreviewListeners();
+    });
+}
+
 // Load Posts
 async function loadPosts(updateURL = true) {
+    const grid = document.getElementById(ELEMENT_IDS.POSTS_GRID);
+    const startTime = Date.now();
+    
     try {
-        // Reload tag counts
+        // Stage 1: Loading tag counts
+        grid.innerHTML = '<p style="color: #10b981; text-align: center; grid-column: 1/-1; font-size: 18px;">⏳ Loading tag counts...</p>';
         state.tagCounts = await loadTagCounts();
         
-        // Load posts based on filter
-        let posts = await apiLoadPosts(state.postsStatusFilter);
+        // Stage 2: Loading posts from server WITH PROGRESS
+        grid.innerHTML = '<p style="color: #10b981; text-align: center; grid-column: 1/-1; font-size: 18px;">⏳ Loading posts from database...<br><span style="font-size: 14px; color: #94a3b8;">0 posts loaded</span></p>';
+        
+        let posts;
+        
+        // Try to use streaming API if available
+        try {
+            if (window.EventSource) {
+                posts = await loadPostsStreaming(state.postsStatusFilter, (progress) => {
+                    if (progress.type === 'status') {
+                        grid.innerHTML = `<p style="color: #10b981; text-align: center; grid-column: 1/-1; font-size: 18px;">⏳ ${progress.message}</p>`;
+                    } else if (progress.type === 'progress') {
+                        grid.innerHTML = `<p style="color: #10b981; text-align: center; grid-column: 1/-1; font-size: 18px;">⏳ Loading posts from database...<br><span style="font-size: 14px; color: #94a3b8;">${progress.loaded} / ${progress.total} posts loaded (${progress.percent}%)</span></p>`;
+                    }
+                });
+            } else {
+                // Browser doesn't support EventSource, use regular API
+                console.log('EventSource not supported, using regular API');
+                posts = await apiLoadPosts(state.postsStatusFilter);
+            }
+        } catch (streamError) {
+            // Streaming failed, fallback to regular API
+            console.warn('Streaming failed, falling back to regular API:', streamError);
+            posts = await apiLoadPosts(state.postsStatusFilter);
+        }
+        
+        const loadTime = ((Date.now() - startTime) / 1000).toFixed(1);
+        console.log(`Loaded ${posts.length} posts in ${loadTime}s`);
+        
+        // Stage 3: Processing posts
+        grid.innerHTML = '<p style="color: #10b981; text-align: center; grid-column: 1/-1; font-size: 18px;">⏳ Processing posts...</p>';
         
         // Fix missing file_type in older posts
         posts = posts.map(post => {
@@ -96,7 +170,19 @@ async function loadPosts(updateURL = true) {
         
         const searchQuery = state.postsSearch;
         
+        // Stage 4: Filtering
+        if (searchQuery) {
+            grid.innerHTML = `<p style="color: #10b981; text-align: center; grid-column: 1/-1; font-size: 18px;">⏳ Filtering ${posts.length} posts...</p>`;
+        }
         posts = applySearchFilter(posts, searchQuery);
+        
+        // Stage 5: Sorting (with special message for size sorting)
+        if (sortBy === 'size') {
+            grid.innerHTML = `<p style="color: #10b981; text-align: center; grid-column: 1/-1; font-size: 18px;">⏳ Calculating file sizes for ${posts.length} posts...<br><span style="font-size: 14px; color: #94a3b8;">This may take a while</span></p>`;
+        } else if (posts.length > 100) {
+            grid.innerHTML = `<p style="color: #10b981; text-align: center; grid-column: 1/-1; font-size: 18px;">⏳ Sorting ${posts.length} posts...</p>`;
+        }
+        
         posts = await sortPosts(posts, sortBy, order);
         state.allPosts = posts;
         
@@ -104,18 +190,16 @@ async function loadPosts(updateURL = true) {
         const end = start + perPage;
         const pagePosts = posts.slice(start, end);
         
-        const grid = document.getElementById(ELEMENT_IDS.POSTS_GRID);
         if (pagePosts.length === 0) {
             grid.innerHTML = '<p style="color: #64748b; text-align: center; grid-column: 1/-1;">No posts</p>';
         } else {
-            // Pass sortBy and searchQuery to renderPost for conditional info display
-            grid.innerHTML = pagePosts.map(p => renderPost(p, sortBy, searchQuery)).join('');
-            attachPostEventListeners();
-            setupMediaErrorHandlers();
-            requestAnimationFrame(() => {
-                setupVideoPreviewListeners();
-            });
+            // Stage 6: Rendering
+            grid.innerHTML = `<p style="color: #10b981; text-align: center; grid-column: 1/-1; font-size: 18px;">⏳ Rendering ${pagePosts.length} posts...</p>`;
+            await renderPostsProgressively(grid, pagePosts, sortBy, searchQuery);
         }
+        
+        const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
+        console.log(`Total load time: ${totalTime}s`);
         
         document.getElementById(ELEMENT_IDS.POSTS_TOTAL_RESULTS).textContent = `Total: ${posts.length} posts`;
         renderPagination(posts.length, perPage, state.postsPage);
@@ -134,8 +218,10 @@ async function loadPosts(updateURL = true) {
             });
         }
     } catch (error) {
+        const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
         showNotification('Failed to load posts', 'error');
-        console.error(error); 
+        console.error(`Load failed after ${totalTime}s:`, error);
+        grid.innerHTML = '<p style="color: #ef4444; text-align: center; grid-column: 1/-1;">Failed to load posts</p>';
     }
 }
 

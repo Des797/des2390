@@ -75,7 +75,7 @@ function initHistoryManagement() {
     }
     
     // Handle browser back/forward
-    window.addEventListener('popstate', (event) => {
+    window.addEventListener('popstate', async (event) => {
         if (historyState.suppressNextPopState) {
             historyState.suppressNextPopState = false;
             return;
@@ -83,40 +83,37 @@ function initHistoryManagement() {
         
         const urlState = loadURLState();
         
-        // Import switchTab and loadPosts dynamically to avoid circular dependency
-        import('./navigation.js').then(nav => {
-            // Switch to appropriate tab
-            if (urlState.tab !== state.currentTab) {
-                nav.switchTab(urlState.tab, false); // false = don't update URL
-            }
+        // Import modules dynamically to avoid circular dependency
+        const nav = await import('./navigation.js');
+        const posts = await import('./posts.js');
+        
+        // Switch to appropriate tab
+        if (urlState.tab !== state.currentTab) {
+            nav.switchTab(urlState.tab, false); // false = don't update URL
+        } else if (urlState.tab === 'posts') {
+            // Tab is already posts, just update the state and reload
+            state.postsPage = urlState.page;
+            state.postsStatusFilter = urlState.filter;
+            state.postsSearch = urlState.search;
+            state.postsSortBy = urlState.sort;
+            state.postsSortOrder = urlState.order;
             
-            // Update posts state if on posts tab
-            if (urlState.tab === 'posts') {
-                state.postsPage = urlState.page;
-                state.postsStatusFilter = urlState.filter;
-                state.postsSearch = urlState.search;
-                state.postsSortBy = urlState.sort;
-                state.postsSortOrder = urlState.order;
-                
-                // Update UI elements
-                const filterSelect = document.getElementById(ELEMENT_IDS.POSTS_STATUS_FILTER);
-                if (filterSelect) filterSelect.value = urlState.filter;
-                
-                const searchInput = document.getElementById(ELEMENT_IDS.POSTS_SEARCH_INPUT);
-                if (searchInput) searchInput.value = urlState.search;
-                
-                const sortSelect = document.getElementById(ELEMENT_IDS.POSTS_SORT);
-                if (sortSelect) sortSelect.value = urlState.sort;
-                
-                const sortOrderBtn = document.getElementById(ELEMENT_IDS.POSTS_SORT_ORDER);
-                if (sortOrderBtn) sortOrderBtn.textContent = urlState.order === 'asc' ? '↑' : '↓';
-                
-                // Reload posts
-                import('./posts.js').then(posts => {
-                    posts.loadPosts(false); // false = don't update URL
-                });
-            }
-        });
+            // Update UI elements
+            const filterSelect = document.getElementById(ELEMENT_IDS.POSTS_STATUS_FILTER);
+            if (filterSelect) filterSelect.value = urlState.filter;
+            
+            const searchInput = document.getElementById(ELEMENT_IDS.POSTS_SEARCH_INPUT);
+            if (searchInput) searchInput.value = urlState.search;
+            
+            const sortSelect = document.getElementById(ELEMENT_IDS.POSTS_SORT);
+            if (sortSelect) sortSelect.value = urlState.sort;
+            
+            const sortOrderBtn = document.getElementById(ELEMENT_IDS.POSTS_SORT_ORDER);
+            if (sortOrderBtn) sortOrderBtn.textContent = urlState.order === 'asc' ? '↑' : '↓';
+            
+            // Reload posts
+            await posts.loadPosts(false); // false = don't update URL
+        }
     });
 }
 
