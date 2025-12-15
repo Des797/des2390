@@ -490,29 +490,6 @@ button.greyed-out {
     display: block;
 }
 
-.gallery-item-media .media-loading {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    color: #94a3b8;
-    font-size: 14px;
-    text-align: center;
-}
-
-.gallery-item-media .media-loading::before {
-    content: '⏳';
-    display: block;
-    font-size: 32px;
-    margin-bottom: 8px;
-    animation: spin 2s linear infinite;
-}
-
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-}
-
 .gallery-item-media .video-overlay {
     position: absolute;
     top: 50%;

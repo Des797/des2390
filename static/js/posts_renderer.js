@@ -147,13 +147,11 @@ function renderMedia(post) {
     if (isVideo) mediaClass = 'media-video';
     else if (isGif) mediaClass = 'media-gif';
 
-    const loadingOverlay = `<div class="media-loading">Loading...</div>`;
     const durationBadge = duration ? `<div class="video-duration">${duration}</div>` : '';
 
     if (isVideo) {
         return `
             <div class="${mediaClass}" data-post-id="${post.id}">
-                ${loadingOverlay}
                 <canvas class="video-thumbnail-canvas" data-post-id="${post.id}"></canvas>
                 <video src="${mediaUrl}" 
                        muted 
@@ -170,7 +168,6 @@ function renderMedia(post) {
 
     return `
         <div class="${mediaClass}" data-post-id="${post.id}">
-            ${loadingOverlay}
             <img src="${mediaUrl}" 
                  alt="Post ${post.id}" 
                  loading="lazy" 
