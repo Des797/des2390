@@ -218,11 +218,16 @@ class Scraper:
                 "created_at": post.get("created_at", ""),
                 "change": post.get("change", ""),
                 "file_type": file_ext.lower(),
-                "downloaded_at": datetime.now().isoformat()
+                "downloaded_at": datetime.now().isoformat(),
+                "status": "pending",
+                "timestamp": time.time()
             }
             
             # Save metadata
             self.file_manager.save_post_json(post_data, self.file_manager.temp_path)
+            
+            # ADD TO CACHE IMMEDIATELY (incremental!)
+            self.database.cache_post(post_data)
             
             # Update tag counts
             self.database.update_tag_counts(tags_list, increment=True)
@@ -231,4 +236,4 @@ class Scraper:
             with self.lock:
                 self.state["total_processed"] += 1
             
-            logger.info(f"Downloaded post {post_id}")
+            logger.info(f"Downloaded and cached post {post_id}")

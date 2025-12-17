@@ -118,6 +118,19 @@ def create_routes(app, config, services):
         )
         return jsonify({"success": success})
     
+    @app.route("/api/rebuild_cache", methods=["POST"])
+    @login_required
+    def rebuild_cache():
+        """Manually rebuild the post cache"""
+        try:
+            from database import Database
+            db = Database(config.DATABASE_PATH)
+            success = db.rebuild_cache_from_files(file_manager)
+            return jsonify({"success": success})
+        except Exception as e:
+            logger.error(f"Cache rebuild failed: {e}", exc_info=True)
+            return jsonify({"success": False, "error": str(e)}), 500
+    
     # Scraper control routes
     @app.route("/api/start", methods=["POST"])
     @login_required
@@ -153,7 +166,7 @@ def create_routes(app, config, services):
     @app.route("/api/posts/stream")
     @login_required
     def stream_posts():
-        """Stream posts with progress updates - much faster for large datasets"""
+        """Stream posts with progress updates - uses fast database cache"""
         filter_type = request.args.get('filter', 'all')
         
         def generate():
@@ -161,31 +174,31 @@ def create_routes(app, config, services):
                 start_time = time.time()
                 
                 # Send initial status
-                yield f"data: {json.dumps({'type': 'status', 'message': 'Starting to load posts...'})}\n\n"
+                yield f"data: {json.dumps({'type': 'status', 'message': 'Checking cache...'})}\n\n"
                 
-                # Get posts based on filter
-                if filter_type == 'pending':
-                    yield f"data: {json.dumps({'type': 'status', 'message': 'Loading pending posts...'})}\n\n"
-                    posts = file_manager.get_pending_posts()
-                    
-                elif filter_type == 'saved':
-                    yield f"data: {json.dumps({'type': 'status', 'message': 'Loading saved posts...'})}\n\n"
-                    posts = file_manager.get_saved_posts()
-                    
-                else:  # all
-                    yield f"data: {json.dumps({'type': 'status', 'message': 'Loading pending posts...'})}\n\n"
-                    pending = file_manager.get_pending_posts()
-                    
-                    yield f"data: {json.dumps({'type': 'status', 'message': f'Loaded {len(pending)} pending. Loading saved posts...'})}\n\n"
-                    saved = file_manager.get_saved_posts()
-                    
-                    yield f"data: {json.dumps({'type': 'status', 'message': f'Loaded {len(saved)} saved. Combining...'})}\n\n"
-                    posts = pending + saved
+                # Check if cache needs rebuilding
+                from database import Database
+                db = Database(config.DATABASE_PATH)
+                
+                if db.is_cache_empty():
+                    yield f"data: {json.dumps({'type': 'status', 'message': 'First run - building cache from files...'})}\n\n"
+                    db.rebuild_cache_from_files(file_manager)
+                
+                # Get posts from cache (FAST!)
+                yield f"data: {json.dumps({'type': 'status', 'message': 'Loading posts from cache...'})}\n\n"
+                
+                status = None if filter_type == 'all' else filter_type
+                posts = db.get_cached_posts(
+                    status=status,
+                    limit=100000,
+                    sort_by='timestamp',
+                    order='DESC'
+                )
                 
                 total = len(posts)
-                chunk_size = 100  # Send 100 posts at a time
+                chunk_size = 100
                 
-                logger.info(f"Streaming {total} posts in chunks of {chunk_size}")
+                logger.info(f"Streaming {total} cached posts in chunks of {chunk_size}")
                 
                 # Send posts in chunks
                 for i in range(0, total, chunk_size):
@@ -193,10 +206,10 @@ def create_routes(app, config, services):
                     progress = min(i + chunk_size, total)
                     
                     yield f"data: {json.dumps({'type': 'chunk', 'posts': chunk, 'progress': progress, 'total': total})}\n\n"
-                    time.sleep(0.01)  # Small delay to allow browser to process
+                    time.sleep(0.01)
                 
                 load_time = time.time() - start_time
-                logger.info(f"Finished streaming {total} posts in {load_time:.2f}s")
+                logger.info(f"Finished streaming {total} posts from cache in {load_time:.2f}s")
                 
                 # Send completion
                 yield f"data: {json.dumps({'type': 'complete', 'total': total})}\n\n"

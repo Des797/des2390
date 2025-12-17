@@ -19,24 +19,51 @@ class PostService:
         self.database = database
     
     def get_posts(self, filter_type: str = 'all') -> List[Dict[str, Any]]:
-        """Get posts based on filter"""
+        """
+        Get posts - uses cache for speed!
+        Only rebuilds cache on first run
+        """
         filter_type = validate_filter_type(filter_type)
         
-        if filter_type == 'pending':
-            return self.file_manager.get_pending_posts()
-        elif filter_type == 'saved':
-            return self.file_manager.get_saved_posts()
-        else:  # all
-            return self.file_manager.get_all_posts()
+        # Check if cache needs initial population
+        if self.database.is_cache_empty():
+            logger.info("Cache is empty, performing initial population...")
+            self.database.rebuild_cache_from_files(self.file_manager)
+        
+        # Get from cache (FAST!)
+        status = None if filter_type == 'all' else filter_type
+        posts = self.database.get_cached_posts(
+            status=status,
+            limit=100000,  # Get all posts
+            sort_by='timestamp',
+            order='DESC'
+        )
+        
+        logger.info(f"Retrieved {len(posts)} posts from cache")
+        return posts
     
     def save_post(self, post_id: int) -> bool:
-        """Save a pending post to archive"""
+        """Save a pending post to archive - WITH INCREMENTAL CACHE UPDATE"""
         post_id = validate_post_id(post_id)
         
+        # Load post data BEFORE moving
+        post_data = self.file_manager.load_post_json(post_id, self.file_manager.temp_path)
+        if not post_data:
+            raise StorageError(f"Post {post_id} not found")
+        
+        # Move the files
         success = self.file_manager.save_post_to_archive(post_id)
+        
         if success:
+            # Update database status tracking
             self.database.set_post_status(post_id, "saved")
-            logger.info(f"Post {post_id} saved successfully")
+            
+            # INCREMENTAL CACHE UPDATE (instant!)
+            from datetime import datetime
+            date_folder = datetime.now().strftime("%m.%d.%Y")
+            self.database.update_post_status(post_id, 'saved', date_folder)
+            
+            logger.info(f"Post {post_id} saved and cache updated")
         else:
             logger.error(f"Failed to save post {post_id}")
             raise StorageError(f"Failed to save post {post_id}")
@@ -44,21 +71,27 @@ class PostService:
         return success
     
     def discard_post(self, post_id: int) -> bool:
-        """Discard a pending post"""
+        """Discard a pending post - WITH INCREMENTAL CACHE UPDATE"""
         post_id = validate_post_id(post_id)
         
         # Get post data before discarding to update tag counts
         post_data = self.file_manager.load_post_json(post_id, self.file_manager.temp_path)
         
+        # Delete the files
         success = self.file_manager.discard_post(post_id)
+        
         if success:
+            # Update database status
             self.database.set_post_status(post_id, "discarded")
+            
+            # REMOVE FROM CACHE (instant!)
+            self.database.remove_from_cache(post_id)
             
             # Update tag counts
             if post_data and 'tags' in post_data:
                 self.database.update_tag_counts(post_data['tags'], increment=False)
             
-            logger.info(f"Post {post_id} discarded successfully")
+            logger.info(f"Post {post_id} discarded and removed from cache")
         else:
             logger.error(f"Failed to discard post {post_id}")
             raise StorageError(f"Failed to discard post {post_id}")
@@ -66,22 +99,27 @@ class PostService:
         return success
     
     def delete_saved_post(self, post_id: int, date_folder: str) -> bool:
-        """Delete a saved post"""
+        """Delete a saved post - WITH INCREMENTAL CACHE UPDATE"""
         post_id = validate_post_id(post_id)
         date_folder = validate_date_folder(date_folder)
         
-        # Get post data before deleting to update tag counts
+        # Get post data before deleting
         import os
         folder_path = os.path.join(self.file_manager.save_path, date_folder)
         post_data = self.file_manager.load_post_json(post_id, folder_path)
         
+        # Delete the files
         success = self.file_manager.delete_saved_post(post_id, date_folder)
+        
         if success:
+            # REMOVE FROM CACHE (instant!)
+            self.database.remove_from_cache(post_id)
+            
             # Update tag counts
             if post_data and 'tags' in post_data:
                 self.database.update_tag_counts(post_data['tags'], increment=False)
             
-            logger.info(f"Saved post {post_id} deleted successfully")
+            logger.info(f"Saved post {post_id} deleted and removed from cache")
         else:
             logger.error(f"Failed to delete saved post {post_id}")
             raise StorageError(f"Failed to delete saved post {post_id}")
