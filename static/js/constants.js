@@ -132,6 +132,7 @@ export const ELEMENT_IDS = {
     SEARCH_TAGS: 'searchTags',
     BLACKLIST_INPUT: 'blacklistInput',
     POSTS_SEARCH_INPUT: 'postsSearchInput',
+    POSTS_SEARCH_BUTTON: 'postsSearchButton',
     
     // Dropdowns
     SEARCH_DROPDOWN: 'searchDropdown',

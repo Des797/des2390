@@ -473,7 +473,17 @@ button.greyed-out {
 }
 
 .gallery-item-media.media-video {
-    border: 3px solid #3b82f6;
+    position: relative;
+    background: #000;
+}
+
+.gallery-item-media.media-video video {
+    opacity: 0;
+    transition: opacity 0.3s;
+}
+
+.gallery-item-media.media-video video[data-loaded] {
+    opacity: 1;
 }
 
 .gallery-item-media.media-gif {

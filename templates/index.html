@@ -120,7 +120,10 @@
                                 <option value="saved">Saved Only</option>
                             </select>
                             <span class="total-results" id="postsTotalResults"></span>
-                            <input type="text" id="postsSearchInput" placeholder="Search (tags, owner:name, score:>50)">
+                            <div class="search-with-button">
+                                <input type="text" id="postsSearchInput" placeholder="Search: tags, (tag1|tag2), owner:name*, score:>=50, rating:s, title:text, type:mp4, width:>=1920">
+                                <button class="btn-primary search-btn" id="postsSearchButton" title="Search">🔍</button>
+                            </div>
                             <select id="postsSort">
                                 <option value="download">Download Date</option>
                                 <option value="upload">Upload Date</option>

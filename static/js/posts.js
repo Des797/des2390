@@ -405,6 +405,13 @@ function filterByOwner(owner) {
     loadPosts();
 }
 
+function performSearch() {
+    const input = document.getElementById(ELEMENT_IDS.POSTS_SEARCH_INPUT);
+    state.postsSearch = input.value;
+    state.postsPage = 1;
+    loadPosts();
+}
+
 // Pagination
 function renderPagination(total, perPage, currentPage) {
     const totalPages = Math.ceil(total / perPage);
@@ -459,6 +466,7 @@ export {
     invertSelection,
     filterByTag,
     filterByOwner,
+    performSearch,
     savePostAction,
     discardPostAction,
     deletePostAction,

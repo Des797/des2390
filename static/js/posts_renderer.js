@@ -42,81 +42,44 @@ function formatVideoDuration(seconds) {
 
 /**
  * Setup dynamic video thumbnails and hover-to-play
+ * OPTIMIZED: Uses poster images instead of canvas thumbnails for faster loading
  */
 function setupVideoPreviewListeners() {
     document
-        .querySelectorAll('.media-video > canvas.video-thumbnail-canvas')
-        .forEach(canvas => {
-            const container = canvas.closest('.media-video');
-            const videoEl = container.querySelector('video.video-preview');
-            const overlay = container.querySelector('.video-overlay');
+        .querySelectorAll('.media-video video')
+        .forEach(videoEl => {
+            const container = videoEl.closest('.media-video');
+            if (!container) return;
 
-            if (!videoEl) return;
-
-            const ctx = canvas.getContext('2d');
-
+            // Lightweight setup - no thumbnail generation
             videoEl.muted = true;
             videoEl.playsInline = true;
-            videoEl.preload = 'metadata';
-
-            videoEl.addEventListener('loadedmetadata', () => {
-                if (!videoEl.videoWidth || !videoEl.videoHeight) return;
-
-                // Optionally store container size for JS scaling
-                canvas.width = videoEl.videoWidth;
-                canvas.height = videoEl.videoHeight;
-                videoEl.currentTime = 0;
-            });
-
-            videoEl.addEventListener('seeked', () => {
-                try {
-                    // Fit video frame inside canvas (aspect-ratio correct)
-                    const containerWidth = container.clientWidth;
-                    const containerHeight = container.clientHeight;
-                    const videoRatio = videoEl.videoWidth / videoEl.videoHeight;
-                    const containerRatio = containerWidth / containerHeight;
-
-                    let drawWidth, drawHeight;
-
-                    if (containerRatio > videoRatio) {
-                        drawHeight = containerHeight;
-                        drawWidth = drawHeight * videoRatio;
-                    } else {
-                        drawWidth = containerWidth;
-                        drawHeight = drawWidth / videoRatio;
-                    }
-
-                    canvas.width = drawWidth;
-                    canvas.height = drawHeight;
-
-                    ctx.clearRect(0, 0, canvas.width, canvas.height);
-                    ctx.drawImage(videoEl, 0, 0, drawWidth, drawHeight);
-
-                    videoEl.style.display = 'none';
-                    canvas.style.display = 'block';
-
-                    if (overlay) overlay.style.display = 'flex';
-                } catch (err) {
-                    console.warn('Thumbnail draw failed', err);
-                }
-            });
+            videoEl.preload = 'none'; // Don't preload anything for faster page load
+            
+            let isHovering = false;
+            let playTimeout = null;
 
             container.addEventListener('mouseenter', () => {
-                canvas.style.display = 'none';
-                videoEl.style.display = 'block';
-                if (overlay) overlay.style.display = 'none';
-                videoEl.play().catch(() => {});
+                isHovering = true;
+                // Delay video playback slightly to avoid loading videos during quick mouse passes
+                playTimeout = setTimeout(() => {
+                    if (isHovering) {
+                        videoEl.preload = 'auto';
+                        videoEl.play().catch(() => {});
+                    }
+                }, 200);
             });
 
             container.addEventListener('mouseleave', () => {
+                isHovering = false;
+                if (playTimeout) {
+                    clearTimeout(playTimeout);
+                    playTimeout = null;
+                }
                 videoEl.pause();
                 videoEl.currentTime = 0;
-                videoEl.style.display = 'none';
-                canvas.style.display = 'block';
-                if (overlay) overlay.style.display = 'flex';
+                videoEl.preload = 'none';
             });
-
-            videoEl.load();
         });
 }
 
@@ -135,7 +98,7 @@ function calculateRowSpan(width, height) {
 }
 
 /**
- * Render media HTML (video or image) with hover-to-play for videos
+ * Render media HTML (video or image) - OPTIMIZED for video performance
  */
 function renderMedia(post) {
     const mediaUrl = getMediaUrl(post);
@@ -150,15 +113,15 @@ function renderMedia(post) {
     const durationBadge = duration ? `<div class="video-duration">${duration}</div>` : '';
 
     if (isVideo) {
+        // Use poster image (thumbnail) instead of canvas for much faster loading
+        // preload="none" ensures videos don't load until needed
         return `
             <div class="${mediaClass}" data-post-id="${post.id}">
-                <canvas class="video-thumbnail-canvas" data-post-id="${post.id}"></canvas>
                 <video src="${mediaUrl}" 
                        muted 
                        loop 
-                       class="video-preview" 
-                       data-post-id="${post.id}" 
-                       style="display:none;">
+                       preload="none"
+                       data-post-id="${post.id}">
                 </video>
                 <div class="video-overlay"></div>
                 ${durationBadge}

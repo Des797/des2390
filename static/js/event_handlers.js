@@ -2,7 +2,7 @@
 import { state } from './state.js';
 import { saveConfig, addBlacklistTags, showSearchDropdown, hideSearchDropdown } from './config.js';
 import { startScraper, stopScraper, loadTagHistory } from './scraper_ui.js';
-import { loadPosts, clearSelection, selectAllOnPage, selectAllMatching, invertSelection, filterByTag, filterByOwner, savePostAction, discardPostAction, deletePostAction, toggleSortOrder } from './posts.js';
+import { loadPosts, clearSelection, selectAllOnPage, selectAllMatching, invertSelection, filterByTag, filterByOwner, savePostAction, discardPostAction, deletePostAction, toggleSortOrder, performSearch } from './posts.js';
 import { bulkSavePosts, bulkDiscardPosts, bulkDeletePosts } from './bulk.js';
 import { showFullMedia, navigateModal, closeModal } from './modal.js';
 import { switchTab } from './navigation.js';
@@ -218,11 +218,21 @@ function setupPostsControlListeners() {
         }
     });
     
-    document.getElementById(ELEMENT_IDS.POSTS_SEARCH_INPUT).addEventListener('input', (e) => {
-        state.postsSearch = e.target.value;
-        state.postsPage = 1;
-        loadPosts();
+    // Search input - only update on Enter or button click, not on input
+    const searchInput = document.getElementById(ELEMENT_IDS.POSTS_SEARCH_INPUT);
+    searchInput.addEventListener('keypress', (e) => {
+        if (e.key === KEYS.ENTER) {
+            performSearch();
+        }
     });
+    
+    // Search button
+    const searchButton = document.getElementById(ELEMENT_IDS.POSTS_SEARCH_BUTTON);
+    if (searchButton) {
+        searchButton.addEventListener('click', () => {
+            performSearch();
+        });
+    }
 }
 
 /**
