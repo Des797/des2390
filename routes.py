@@ -2,6 +2,7 @@
 import logging
 import json
 import time
+import os
 from flask import request, jsonify, render_template, session, redirect, url_for, send_from_directory, Response
 from functools import wraps
 from exceptions import ValidationError, PostNotFoundError, StorageError
@@ -271,7 +272,66 @@ def create_routes(app, config, services):
             return jsonify({"size": size})
         except ValidationError as e:
             return jsonify({"error": str(e)}), 400
-    
+
+    @app.route("/api/post/<int:post_id>/generate-thumbnail", methods=["POST"])
+    @login_required
+    def generate_thumbnail(post_id):
+        """Generate thumbnail for a video post on-demand"""
+        try:
+            post_id = validate_post_id(post_id)
+            
+            # Find the video file
+            from video_processor import get_video_processor
+            processor = get_video_processor()
+            
+            # Check temp directory
+            video_path = None
+            for filename in os.listdir(file_manager.temp_path or '.'):
+                if filename.startswith(str(post_id)) and filename.endswith(('.mp4', '.webm')):
+                    video_path = os.path.join(file_manager.temp_path, filename)
+                    break
+            
+            # Check save directory if not found
+            if not video_path and file_manager.save_path:
+                for date_folder in os.listdir(file_manager.save_path):
+                    folder_path = os.path.join(file_manager.save_path, date_folder)
+                    if not os.path.isdir(folder_path):
+                        continue
+                    for filename in os.listdir(folder_path):
+                        if filename.startswith(str(post_id)) and filename.endswith(('.mp4', '.webm')):
+                            video_path = os.path.join(folder_path, filename)
+                            break
+                    if video_path:
+                        break
+            
+            if not video_path:
+                return jsonify({"error": "Video not found"}), 404
+            
+            # Generate thumbnail
+            thumb_path = processor.generate_thumbnail_at_percentage(video_path, percentage=10.0)
+            
+            if thumb_path:
+                # Convert to URL path
+                if file_manager.temp_path and thumb_path.startswith(file_manager.temp_path):
+                    relative_path = thumb_path.replace(file_manager.temp_path, '').lstrip(os.sep)
+                    thumbnail_url = f"/temp/{relative_path.replace(os.sep, '/')}"
+                elif file_manager.save_path and thumb_path.startswith(file_manager.save_path):
+                    relative_path = thumb_path.replace(file_manager.save_path, '').lstrip(os.sep)
+                    thumbnail_url = f"/saved/{relative_path.replace(os.sep, '/')}"
+                else:
+                    thumbnail_url = None
+                
+                return jsonify({
+                    "success": True,
+                    "thumbnail_url": thumbnail_url
+                })
+            else:
+                return jsonify({"error": "Thumbnail generation failed"}), 500
+                
+        except Exception as e:
+            logger.error(f"Thumbnail generation error: {e}", exc_info=True)
+            return jsonify({"error": str(e)}), 500
+
     # Autocomplete route
     @app.route("/api/autocomplete")
     @login_required

@@ -29,18 +29,6 @@ class VideoProcessor:
     
     def generate_thumbnail(self, video_path: str, output_path: Optional[str] = None, 
                           timestamp: str = "00:00:01", size: str = "320x180") -> Optional[str]:
-        """
-        Generate thumbnail from video at specified timestamp
-        
-        Args:
-            video_path: Path to video file
-            output_path: Output path for thumbnail (auto-generated if None)
-            timestamp: Timestamp to extract frame (format: HH:MM:SS)
-            size: Thumbnail size (WxH)
-        
-        Returns:
-            Path to generated thumbnail or None if failed
-        """
         if not self.ffmpeg_available:
             return None
         
@@ -52,7 +40,12 @@ class VideoProcessor:
         if output_path is None:
             video_dir = os.path.dirname(video_path)
             video_name = Path(video_path).stem
-            output_path = os.path.join(video_dir, f"{video_name}_thumb.jpg")
+            
+            # Create .thumbnails subdirectory
+            thumb_dir = os.path.join(video_dir, '.thumbnails')
+            os.makedirs(thumb_dir, exist_ok=True)
+            
+            output_path = os.path.join(thumb_dir, f"{video_name}_thumb.jpg")
         
         # Check if thumbnail already exists
         if os.path.exists(output_path):
@@ -94,17 +87,8 @@ class VideoProcessor:
         except Exception as e:
             logger.error(f"Unexpected error generating thumbnail: {e}")
             return None
-    
-    def get_video_duration(self, video_path: str) -> Optional[float]:
-        """
-        Get video duration in seconds using ffprobe
         
-        Args:
-            video_path: Path to video file
-            
-        Returns:
-            Duration in seconds or None if failed
-        """
+    def get_video_duration(self, video_path: str) -> Optional[float]:
         if not self.ffmpeg_available:
             return None
         
@@ -133,16 +117,6 @@ class VideoProcessor:
             return None
     
     def batch_generate_thumbnails(self, video_paths: list, progress_callback=None) -> dict:
-        """
-        Generate thumbnails for multiple videos
-        
-        Args:
-            video_paths: List of video file paths
-            progress_callback: Optional callback(current, total, path)
-        
-        Returns:
-            Dict mapping video_path -> thumbnail_path
-        """
         results = {}
         total = len(video_paths)
         
@@ -159,17 +133,6 @@ class VideoProcessor:
     
     def generate_thumbnail_at_percentage(self, video_path: str, percentage: float = 10.0,
                                         output_path: Optional[str] = None) -> Optional[str]:
-        """
-        Generate thumbnail at percentage of video duration
-        
-        Args:
-            video_path: Path to video file
-            percentage: Percentage of video duration (0-100)
-            output_path: Output path for thumbnail
-        
-        Returns:
-            Path to generated thumbnail or None if failed
-        """
         duration = self.get_video_duration(video_path)
         if duration is None:
             # Fallback to 1 second if duration can't be determined
@@ -184,6 +147,16 @@ class VideoProcessor:
         timestamp = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
         
         return self.generate_thumbnail(video_path, output_path, timestamp)
+        
+    def get_thumbnail_path(self, video_path: str) -> str:
+        video_dir = os.path.dirname(video_path)
+        video_name = Path(video_path).stem
+        thumb_dir = os.path.join(video_dir, '.thumbnails')
+        return os.path.join(thumb_dir, f"{video_name}_thumb.jpg")
+
+    def thumbnail_exists(self, video_path: str) -> bool:
+        thumb_path = self.get_thumbnail_path(video_path)
+        return os.path.exists(thumb_path)
 
 
 # Global instance

@@ -93,7 +93,55 @@ function setupVideoPreviewListeners() {
             video.currentTime = 0;
         });
     });
+    // Generate missing thumbnails on-demand
+    generateMissingThumbnails();
 }
+
+window.setupVideoPreviewListeners = setupVideoPreviewListeners;
+
+/**
+ * Generate missing video thumbnails on-demand
+ */
+async function generateMissingThumbnails() {
+    const videos = document.querySelectorAll('.media-video video[data-thumb-url]');
+    
+    videos.forEach(async (video) => {
+        const thumbUrl = video.dataset.thumbUrl;
+        const postId = video.dataset.postId;
+        
+        // Check if thumbnail loads
+        const img = new Image();
+        img.onload = () => {
+            // Thumbnail exists, do nothing
+            video.poster = thumbUrl;
+        };
+        
+        img.onerror = async () => {
+            // Thumbnail missing, request generation
+            try {
+                const response = await fetch(`/api/post/${postId}/generate-thumbnail`, {
+                    method: 'POST'
+                });
+                
+                if (response.ok) {
+                    const result = await response.json();
+                    if (result.thumbnail_url) {
+                        video.poster = result.thumbnail_url;
+                        logger.debug(`Generated thumbnail for post ${postId}`);
+                    }
+                }
+            } catch (error) {
+                console.warn(`Failed to generate thumbnail for post ${postId}:`, error);
+                // Fallback: use first frame as poster
+                video.poster = '';
+            }
+        };
+        
+        img.src = thumbUrl;
+    });
+}
+
+window.generateMissingThumbnails = generateMissingThumbnails;
 
 
 /**
@@ -125,8 +173,11 @@ function renderMedia(post) {
     const durationBadge = duration ? `<div class="video-duration">${duration}</div>` : '';
 
     if (isVideo) {
-        // Generate thumbnail URL (assumes _thumb.jpg naming convention)
-        const thumbUrl = mediaUrl.replace(/\.(mp4|webm)$/i, '_thumb.jpg');
+        // Generate thumbnail URL with .thumbnails subdirectory
+        const mediaUrlParts = mediaUrl.split('/');
+        const filename = mediaUrlParts.pop();
+        const thumbFilename = filename.replace(/\.(mp4|webm)$/i, '_thumb.jpg');
+        const thumbUrl = [...mediaUrlParts, '.thumbnails', thumbFilename].join('/');
         
         return `
             <div class="${mediaClass}" data-post-id="${post.id}">
@@ -135,7 +186,8 @@ function renderMedia(post) {
                        muted 
                        loop 
                        preload="none"
-                       data-post-id="${post.id}">
+                       data-post-id="${post.id}"
+                       data-thumb-url="${thumbUrl}">
                 </video>
                 <div class="video-overlay"></div>
                 ${durationBadge}
@@ -434,5 +486,3 @@ export {
     isVideoFile,
     isGifFile
 };
-
-window.setupVideoPreviewListeners = setupVideoPreviewListeners;

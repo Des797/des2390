@@ -242,11 +242,15 @@ class FileManager:
                 target_json = os.path.join(target_dir, f"{post_id}.json")
                 
                 shutil.move(file_path, target_file)
-            
-                # Move thumbnail if exists
-                thumb_path = file_path.replace(file_ext, '_thumb.jpg')
+
+                # Move thumbnail if exists (from .thumbnails subdirectory)
+                video_dir = os.path.dirname(file_path)
+                thumb_path = os.path.join(video_dir, '.thumbnails', f"{post_id}_thumb.jpg")
                 if os.path.exists(thumb_path):
-                    target_thumb = os.path.join(target_dir, f"{post_id}_thumb.jpg")
+                    # Create .thumbnails in target directory
+                    target_thumb_dir = os.path.join(target_dir, '.thumbnails')
+                    os.makedirs(target_thumb_dir, exist_ok=True)
+                    target_thumb = os.path.join(target_thumb_dir, f"{post_id}_thumb.jpg")
                     shutil.move(thumb_path, target_thumb)
                 
                 # Move JSON
@@ -282,6 +286,12 @@ class FileManager:
             file_path = post_data.get("file_path")
             if file_path and os.path.exists(file_path):
                 os.remove(file_path)
+                
+                # Delete thumbnail if exists
+                thumb_path = os.path.join(self.temp_path, '.thumbnails', f"{post_id}_thumb.jpg")
+                if os.path.exists(thumb_path):
+                    os.remove(thumb_path)
+                    logger.debug(f"Deleted thumbnail for post {post_id}")
             
             # Delete JSON
             os.remove(json_path)
@@ -292,7 +302,7 @@ class FileManager:
         except Exception as e:
             logger.error(f"Failed to discard post {post_id}: {e}")
             return False
-    
+        
     def delete_saved_post(self, post_id: int, date_folder: str) -> bool:
         """Delete post from save directory"""
         if not self.save_path:
@@ -316,6 +326,12 @@ class FileManager:
             file_path = os.path.join(folder_path, f"{post_id}{file_ext}")
             if os.path.exists(file_path):
                 os.remove(file_path)
+                
+                # Delete thumbnail if exists
+                thumb_path = os.path.join(folder_path, '.thumbnails', f"{post_id}_thumb.jpg")
+                if os.path.exists(thumb_path):
+                    os.remove(thumb_path)
+                    logger.debug(f"Deleted thumbnail for post {post_id}")
             
             # Delete JSON
             os.remove(json_path)
@@ -326,7 +342,7 @@ class FileManager:
         except Exception as e:
             logger.error(f"Failed to delete saved post {post_id}: {e}")
             return False
-    
+        
     def get_file_size(self, post_id: int) -> int:
         """Get file size for a post"""
         # Check temp directory
