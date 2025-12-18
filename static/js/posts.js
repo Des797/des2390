@@ -6,6 +6,7 @@ import { renderPost, renderPaginationButtons, setupVideoPreviewListeners } from 
 import { attachPostEventListeners, setupPaginationListeners, setupMediaErrorHandlers } from './event_handlers.js';
 import { useVirtualScroll, destroyVirtualScroll } from './virtual_scroll.js';
 import { ELEMENT_IDS, URL_PARAMS, POST_STATUS, CSS_CLASSES, PAGINATION, SORT_ORDER } from './constants.js';
+import { parseQueryTree, matchNode } from './query_parser.js';
 
 window.setupVideoPreviewListeners = setupVideoPreviewListeners;
 

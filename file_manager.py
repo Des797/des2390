@@ -288,10 +288,13 @@ class FileManager:
                 os.remove(file_path)
                 
                 # Delete thumbnail if exists
-                thumb_path = os.path.join(self.temp_path, '.thumbnails', f"{post_id}_thumb.jpg")
-                if os.path.exists(thumb_path):
-                    os.remove(thumb_path)
-                    logger.debug(f"Deleted thumbnail for post {post_id}")
+                try:
+                    thumb_path = os.path.join(self.temp_path, '.thumbnails', f"{post_id}_thumb.jpg")
+                    if os.path.exists(thumb_path):
+                        os.remove(thumb_path)
+                        logger.debug(f"Deleted thumbnail for post {post_id}")
+                except Exception as thumb_error:
+                    logger.warning(f"Failed to delete thumbnail for post {post_id}: {thumb_error}")
             
             # Delete JSON
             os.remove(json_path)
@@ -328,10 +331,13 @@ class FileManager:
                 os.remove(file_path)
                 
                 # Delete thumbnail if exists
-                thumb_path = os.path.join(folder_path, '.thumbnails', f"{post_id}_thumb.jpg")
-                if os.path.exists(thumb_path):
-                    os.remove(thumb_path)
-                    logger.debug(f"Deleted thumbnail for post {post_id}")
+                try:
+                    thumb_path = os.path.join(folder_path, '.thumbnails', f"{post_id}_thumb.jpg")
+                    if os.path.exists(thumb_path):
+                        os.remove(thumb_path)
+                        logger.debug(f"Deleted thumbnail for post {post_id}")
+                except Exception as thumb_error:
+                    logger.warning(f"Failed to delete thumbnail for post {post_id}: {thumb_error}")
             
             # Delete JSON
             os.remove(json_path)
@@ -342,7 +348,7 @@ class FileManager:
         except Exception as e:
             logger.error(f"Failed to delete saved post {post_id}: {e}")
             return False
-        
+
     def get_file_size(self, post_id: int) -> int:
         """Get file size for a post"""
         # Check temp directory

@@ -9,7 +9,15 @@ rule34_scraper/
 ├── app.py                      # Main Flask application
 ├── config.py                   # Configuration management
 ├── routes.py                   # Flask routes/blueprints
-├── database.py                 # Database operations module
+├── database/                   # Modularized database layer
+│   ├── __init__.py             # Exports Database façade & repos
+│   ├── database.py             # Database façade class
+│   ├── core.py                 # Core SQLite connection & initialization
+│   ├── config_repo.py          # Config repository
+│   ├── search_repo.py          # Search history repository
+│   ├── tag_repo.py             # Tag management repository
+│   ├── post_cache_repo.py      # Post cache repository
+│   └── post_status_repo.py     # Post status / Elasticsearch repository
 ├── api_client.py               # Rule34 API client module
 ├── file_manager.py             # File operations module
 ├── video_processor.py          # Generates video thumbnails

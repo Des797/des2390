@@ -1,224 +1,170 @@
 # Rule34 Scraper - Advanced Search Syntax Guide
 
-## Basic Tag Search
+This guide explains how to construct searches to find posts efficiently using tags, filters, wildcards, and logical operators. Beginner-friendly examples appear first, advanced usage later.
+
+---
+
+## 1. Basic Tag Search
 
 ### Single Tag
 ```
 girl
 ```
-Finds all posts with the tag "girl"
+Finds all posts with the tag `girl`.
 
 ### Multiple Tags (AND)
 ```
 girl red_hair
 ```
-Finds posts that have BOTH "girl" AND "red_hair"
+Finds posts that have **both** `girl` **and** `red_hair`.
 
-### Negative Tags (Exclusion)
+
+### Negative Tags (NOT)
 ```
 girl -blonde
 ```
-Finds posts with "girl" but WITHOUT "blonde"
+Finds posts with `girl` **without** `blonde`.
+
+**Negation Aliases:** `-`, `!`, `exclude:`, `remove:`, `negate:`, `not:`  
+`girl exclude:blonde` **=** `girl -blonde`.
 
 ---
 
-## OR Operator
-
-### Using Parentheses with Pipe
-```
-(red_hair|blonde|brunette)
-```
-Finds posts with red_hair OR blonde OR brunette
-
-### Using Parentheses with Tilde
-```
-(cat~dog~fox)
-```
-Alternative syntax: finds posts with cat OR dog OR fox
-
-### Combining AND with OR
-```
-girl (red_hair|blonde) dress
-```
-Finds posts that have "girl" AND "dress" AND (red_hair OR blonde)
-
-### Multiple OR Groups
-```
-(cat|dog) (red|blue)
-```
-Finds posts that have (cat OR dog) AND (red OR blue)
-
----
-
-## Wildcards
+## 2. Wildcards
 
 ### Starts With
 ```
-red_*
+red*
 ```
-Finds tags starting with "red_" (e.g., red_hair, red_dress, red_eyes)
+Matches tags starting with `red` (e.g., `reddened`, `red_dress`).
 
 ### Ends With
 ```
-*_girl
+*red
 ```
-Finds tags ending with "_girl" (e.g., cat_girl, fox_girl, demon_girl)
+Matches tags ending with `red` (e.g., `angered`, `turning_red`).
 
 ### Contains
 ```
 *red*
 ```
-Finds tags containing "red" anywhere (e.g., red, bored, sacred)
+Matches tags containing `red` anywhere (e.g., `predator`, `red_shoes`, `sacred`).
 
-### Exact Match (No Wildcard)
-```
-red
-```
-Finds only the exact tag "red"
-
-**Note:** Wildcards only apply to the side they're on. `ai_gen*` will NOT match `not_ai_generated` because it only matches the start.
+**Tip:** Wildcards match **only on the side they appear**. Example: `ai_gen*` does **not** match `is_ai_generated`.
 
 ---
 
-## Owner Search
+## 3. Owner Search
 
 ### Exact Owner
 ```
 owner:username
 ```
-Finds posts by exact username
+Finds posts by `username`.
 
 ### Owner with Wildcard
 ```
 owner:user*
 ```
-Finds posts by owners starting with "user" (e.g., user123, username, user_artist)
-
+Matches owners starting with `user` (e.g., `user123`, `username`).  
 ```
 owner:*admin
 ```
-Finds posts by owners ending with "admin"
+Matches owners ending with `admin`.
+
+**Would find:** `user123` for `owner:user*`.  
+**Would not find:** `superuser`.
 
 ---
 
-## Score Search
+## 4. Score, Rating, and Dimensions
 
-### Exact Score
-```
-score:100
-```
-Finds posts with score exactly 100
+### Score
+- Exact: `score:100` → exactly 100  
+- Greater than: `score:>50` → greater than 50  
+- Greater or equal: `score:>=100`  
+- Less than: `score:<20`  
+- Less or equal: `score:<=10`  
+- Wildcards allowed: `score:1*` → 10, 12, 123
 
-### Greater Than
-```
-score:>50
-```
-Finds posts with score greater than 50
+### Rating
+- Safe: `rating:s`  
+- Questionable: `rating:q`  
+- Explicit: `rating:e`
 
-### Greater Than or Equal
-```
-score:>=100
-```
-Finds posts with score 100 or higher
+### Dimensions
+- Width: `width:1920` (exact), `width:>1920`, `width:<=1000`, `width:1*`  
+- Height: `height:1080` (exact), `height:<500`, `height:>=720`, `height:10*`  
 
-### Less Than
-```
-score:<20
-```
-Finds posts with score less than 20
-
-### Less Than or Equal
-```
-score:<=10
-```
-Finds posts with score 10 or lower
+**Tip:** Wildcards in numeric fields match patterns; comparison operators apply numerical logic.
 
 ---
 
-## Rating Search
+## 5. Title and File Type
 
-### Safe
-```
-rating:s
-```
-Finds safe posts
+### Title Search
+- Contains text: `title:dragon` (case-insensitive)  
+- Wildcards supported: `title:*dragon*` → matches titles containing `dragon` anywhere
 
-### Questionable
-```
-rating:q
-```
-Finds questionable posts
-
-### Explicit
-```
-rating:e
-```
-Finds explicit posts
+### File Type
+- By extension: `type:mp4`, `file_type:jpg`  
+- Wildcard: `type:*p*` → matches `mp4`, `webp`
 
 ---
 
-## Title Search
+## 6. OR Operator (Parentheses)
 
-### Contains Text
+### Basic OR
 ```
-title:dragon
+(red_hair|blonde|brunette)
 ```
-Finds posts with "dragon" in the title (case-insensitive)
+Matches posts with **any one** of the tags.
 
----
+**Would find:** `red_hair`, `blonde`, or `brunette`.  
+**Would not find:** posts with neither.
 
-## File Type Search
+### Alternative Separators
+```
+(cat~dog~fox)
+```
+```
+(cat,dog,fox)
+```
+Works identically to `|`.
 
-### By Extension
+### Combining AND and OR
 ```
-type:mp4
+girl (red_hair|blonde) dress
 ```
-Finds video files (.mp4)
+Matches posts with:
+- `girl` AND `dress` AND (`red_hair` OR `blonde`)
 
-```
-type:jpg
-```
-Finds JPEG images
+**Would find:** `girl`, `red_hair`, `dress`.  
+**Would not find:** `girl`, `blonde` without `dress`.
 
+### Multiple OR Groups
 ```
-file_type:webm
+(cat|dog) (red|blue)
 ```
-Alternative syntax (same result)
+Matches posts with:
+- (`cat` OR `dog`) AND (`red` OR `blue`)
 
----
+**Would find:** `cat` + `red`, `dog` + `blue`.  
+**Would not find:** `cat` + `green`, `mouse` + `red`.
 
-## Dimension Search
+### Nested OR Groups
+```
+(girl|(boy|child)) red_hair
+```
+Matches posts with:
+- `red_hair` AND (`girl` OR `boy` OR `child`)
 
-### Width Filters
-```
-width:>=1920
-```
-Finds posts 1920px wide or wider
-
-```
-width:<1000
-```
-Finds posts narrower than 1000px
-
-```
-width:1920
-```
-Finds posts exactly 1920px wide
-
-### Height Filters
-```
-height:>=1080
-```
-Finds posts 1080px tall or taller
-
-```
-height:<500
-```
-Finds posts shorter than 500px
+**Would find:** `boy` + `red_hair`.  
+**Would not find:** `alien` + `red_hair`.
 
 ---
 
-## Complex Examples
+## 7. Complex Examples
 
 ### High-res red-haired or blonde girl
 ```
@@ -247,21 +193,38 @@ girl red_hair -ai_generated -ai_gen* score:>50
 
 ---
 
-## Search Tips
+## 8. Search Tips
 
-1. **Click the 🔍 button or press Enter** to execute your search
-2. **Combine filters** for precise results
-3. **Use wildcards wisely** - they only work on the side where they appear
-4. **OR groups** must be in parentheses with | or ~ separator
-5. **Negative tags** help exclude unwanted content
-6. **Dimension filters** are great for finding high-quality images
-7. **Owner wildcards** help find related artists
+1. Execute search with the **🔍 button** or **Enter**.  
+2. Combine multiple filters for precise results.  
+3. Wildcards match **only on the side placed**.  
+4. Parentheses required for OR groups (`|`, `~`, `,`).  
+5. Negative tags (`-`, `!`, `exclude:` etc.) exclude unwanted content.  
+6. Dimension filters help locate high-quality images/videos.  
+7. Owner wildcards find related artists.  
+8. Numeric fields support wildcards and comparison operators.  
 
 ---
 
-## Operator Precedence
+## 9. Operator Precedence
 
-1. **Parentheses (OR groups)** are evaluated first
-2. **Negative tags** are applied
-3. **Wildcards** are matched
-4. **All other filters** (owner, score, rating, etc.) are combined with AND logic
+1. Parentheses (OR groups) first  
+2. Negative tags / exclusions applied  
+3. Wildcards matched  
+4. Numeric & other filters (`owner`, `score`, `rating`, `type`, `title`, `width`, `height`) combined using **AND logic**
+
+
+| Field / Filter    | Syntax Examples                                  | Notes / Wildcards                                                                                            |
+| ----------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| **Tag**           | `girl`, `red_hair`, `-blonde`                    | Negation prefixes: `-`, `!`, `exclude:`, `remove:`, `negate:`, `not:`. Wildcards: `*red*`, `red_*`, `*_girl` |
+| **Owner**         | `owner:username`, `owner:user*`                  | Aliases: `user`, `creator`, `author`. Wildcards supported at start/end/middle                                |
+| **Score**         | `score:100`, `score:>50`, `score:*50*`           | Supports operators: `>`, `>=`, `<`, `<=`, `=`. Wildcards allowed                                             |
+| **Rating**        | `rating:s`, `rating:q`, `rating:e`               | Case-insensitive                                                                                             |
+| **Title**         | `title:dragon`                                   | Case-insensitive. Wildcards supported                                                                        |
+| **File Type**     | `type:mp4`, `file_type:jpg`                      | Aliases: `ext`, `extension`, `filetype`. Wildcards supported                                                 |
+| **Width**         | `width:>=1920`, `width:*20*`                     | Supports operators `>`, `>=`, `<`, `<=`, `=`. Wildcards allowed                                              |
+| **Height**        | `height:<500`                                    | Same as width                                                                                                |
+| **OR Groups**     | `(red_hair&#124;blonde)`, `(cat~dog)`, `(a,b,c)` | OR operators inside parentheses only. Nested OR allowed                                                      |
+| **AND Logic**     | `girl red_hair`                                  | Space between tokens = AND                                                                                   |
+| **Negative Tags** | `-ai_generated`, `not:blonde`                    | Applied before wildcards and OR                                                                              |
+| **Wildcards**     | `*red*`, `red_*`, `*_girl`                       | `*` can be at start, end, or both sides. Numeric fields also support `*`                                     |
