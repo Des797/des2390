@@ -6,17 +6,18 @@ Create this exact folder structure:
 
 ```
 rule34_scraper/
-├── app.py                      # Main Flask application (updated)
-├── config.py                   # Configuration management (NEW)
-├── routes.py                   # Flask routes/blueprints (NEW)
+├── app.py                      # Main Flask application
+├── config.py                   # Configuration management
+├── routes.py                   # Flask routes/blueprints
 ├── database.py                 # Database operations module
 ├── api_client.py               # Rule34 API client module
 ├── file_manager.py             # File operations module
+├── video_processor.py          # Generates video thumbnails
 ├── scraper.py                  # Scraper logic module
-├── utils.py                    # Backend utilities (NEW)
-├── exceptions.py               # Custom exceptions (NEW)
-├── validators.py               # Input validation (NEW)
-├── services.py                 # Business logic layer (NEW)
+├── utils.py                    # Backend utilities
+├── exceptions.py               # Custom exceptions
+├── validators.py               # Input validation
+├── services.py                 # Business logic layer 
 ├── rule34_scraper.db          # Database (created automatically)
 ├── rule34_scraper.log         # Logs (created automatically)
 ├── templates/
@@ -31,14 +32,15 @@ rule34_scraper/
         ├── utils.js           # Utility functions
         ├── api.js             # API calls
         ├── config.js          # Configuration management
-        ├── constants.js       # Constants & config (NEW)
-        ├── posts.js           # Posts logic (refactored)
-        ├── posts_renderer.js  # Posts rendering (NEW)
-        ├── event_handlers.js  # Event binding (NEW)
+        ├── constants.js       # Constants
+        ├── posts.js           # Posts logic
+        ├── posts_renderer.js  # Posts rendering
+        ├── event_handlers.js  # Event binding
         ├── modal.js           # Modal/lightbox functions
         ├── bulk.js            # Bulk operations
         ├── scraper_ui.js      # Scraper UI controls
-        └── navigation.js      # Tab navigation
+        ├── navigation.js      # Tab navigation
+        └── virtual_scroll.js  # Scroll management
 ```
 
 ## 🔧 Installation

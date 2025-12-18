@@ -112,7 +112,14 @@
 
                 <div class="gallery">
                     <div class="gallery-header">
-                        <h2>📷 Posts</h2>
+                        <h2 style="display: flex; align-items: center; gap: 10px;">
+                            📷 Posts
+                            <button class="btn-primary" onclick="window.refreshCurrentPage()" 
+                                    title="Refresh current page" 
+                                    style="padding: 6px 12px; font-size: 14px;">
+                                🔄 Refresh
+                            </button>
+                        </h2>
                         <div class="gallery-controls">
                             <select id="postsStatusFilter">
                                 <option value="all">All Posts</option>
@@ -198,10 +205,7 @@ Examples: frog red_* *_dress"></textarea>
         <span id="notificationText"></span>
     </div>
 
-    <script>
-        // Pass tag counts to JavaScript
-        window.tagCounts = {{ tag_counts|safe }};
-    </script>
+    <!-- Tag counts loaded via API, not inlined -->
     <script type="module" src="/static/js/main.js"></script>
 </body>
 </html>

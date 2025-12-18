@@ -41,46 +41,58 @@ function formatVideoDuration(seconds) {
 }
 
 /**
- * Setup dynamic video thumbnails and hover-to-play
- * OPTIMIZED: Uses poster images instead of canvas thumbnails for faster loading
+ * Setup video hover-to-play (FIXED)
  */
 function setupVideoPreviewListeners() {
-    document
-        .querySelectorAll('.media-video video')
-        .forEach(videoEl => {
-            const container = videoEl.closest('.media-video');
-            if (!container) return;
-
-            // Lightweight setup - no thumbnail generation
-            videoEl.muted = true;
-            videoEl.playsInline = true;
-            videoEl.preload = 'none'; // Don't preload anything for faster page load
-            
-            let isHovering = false;
-            let playTimeout = null;
-
-            container.addEventListener('mouseenter', () => {
-                isHovering = true;
-                // Delay video playback slightly to avoid loading videos during quick mouse passes
-                playTimeout = setTimeout(() => {
-                    if (isHovering) {
-                        videoEl.preload = 'auto';
-                        videoEl.play().catch(() => {});
+    document.querySelectorAll('.media-video').forEach(container => {
+        const video = container.querySelector('video');
+        if (!video) return;
+        
+        video.muted = true;
+        video.playsInline = true;
+        video.preload = 'none';
+        video.loop = true;
+        
+        let isHovering = false;
+        let playTimeout = null;
+        let hasLoadedOnce = false;
+        
+        // Generate thumbnail URL
+        const postId = video.dataset.postId;
+        const videoSrc = video.src;
+        const thumbUrl = videoSrc.replace(/\.(mp4|webm)$/i, '_thumb.jpg');
+        
+        // Set poster if thumbnail exists
+        if (!video.poster) {
+            video.poster = thumbUrl;
+        }
+        
+        container.addEventListener('mouseenter', () => {
+            isHovering = true;
+            playTimeout = setTimeout(() => {
+                if (isHovering) {
+                    if (!hasLoadedOnce) {
+                        video.preload = 'auto';
+                        video.load();
+                        hasLoadedOnce = true;
                     }
-                }, 200);
-            });
-
-            container.addEventListener('mouseleave', () => {
-                isHovering = false;
-                if (playTimeout) {
-                    clearTimeout(playTimeout);
-                    playTimeout = null;
+                    video.play().catch(err => {
+                        console.warn('Video play failed:', err);
+                    });
                 }
-                videoEl.pause();
-                videoEl.currentTime = 0;
-                videoEl.preload = 'none';
-            });
+            }, 200);
         });
+        
+        container.addEventListener('mouseleave', () => {
+            isHovering = false;
+            if (playTimeout) {
+                clearTimeout(playTimeout);
+                playTimeout = null;
+            }
+            video.pause();
+            video.currentTime = 0;
+        });
+    });
 }
 
 
@@ -98,7 +110,7 @@ function calculateRowSpan(width, height) {
 }
 
 /**
- * Render media HTML (video or image) - OPTIMIZED for video performance
+ * Render media HTML with proper thumbnail support
  */
 function renderMedia(post) {
     const mediaUrl = getMediaUrl(post);
@@ -113,11 +125,13 @@ function renderMedia(post) {
     const durationBadge = duration ? `<div class="video-duration">${duration}</div>` : '';
 
     if (isVideo) {
-        // Use poster image (thumbnail) instead of canvas for much faster loading
-        // preload="none" ensures videos don't load until needed
+        // Generate thumbnail URL (assumes _thumb.jpg naming convention)
+        const thumbUrl = mediaUrl.replace(/\.(mp4|webm)$/i, '_thumb.jpg');
+        
         return `
             <div class="${mediaClass}" data-post-id="${post.id}">
                 <video src="${mediaUrl}" 
+                       poster="${thumbUrl}"
                        muted 
                        loop 
                        preload="none"
@@ -138,7 +152,6 @@ function renderMedia(post) {
         </div>
     `;
 }
-
 
 /**
  * Render post title

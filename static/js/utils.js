@@ -277,8 +277,7 @@ function matchesWildcard(text, pattern, regex) {
 }
 
 /**
- * Recursive descent parser for building AST from tokens
- * Supports nested OR groups and proper precedence
+ * Recursive descent parser - FIXED for 3+ OR items and exclusions
  */
 function parseTokens(tokens, startIndex = 0, depth = 0) {
     const andGroup = [];
@@ -300,55 +299,68 @@ function parseTokens(tokens, startIndex = 0, depth = 0) {
             i++;
             break;
         } else if (token === '|') {
-            // OR operator - need to collect into OR node
-            // This is handled by looking ahead
+            // Skip standalone OR (handled in OR collection)
             i++;
         } else {
             // Regular filter token
             try {
                 const filter = parseFilterToken(token);
                 
-                // Check if next token is OR
+                // Check if this starts an OR group
                 if (i + 1 < tokens.length && tokens[i + 1] === '|') {
-                    // Collect OR group
+                    // Collect entire OR group
                     const orGroup = [filter];
-                    i += 2; // Skip current token and |
+                    i++; // Move past current token
                     
-                    // Keep collecting OR operands
+                    // Keep collecting until we hit something that's not part of OR
                     while (i < tokens.length) {
+                        if (tokens[i] === '|') {
+                            i++; // Skip the OR operator
+                            continue;
+                        }
+                        
+                        if (tokens[i] === ')' && depth > 0) {
+                            // End of parenthetical group
+                            break;
+                        }
+                        
                         if (tokens[i] === '(') {
+                            // Nested group in OR
                             const { node, newIndex } = parseTokens(tokens, i + 1, depth + 1);
                             orGroup.push(node);
                             i = newIndex;
-                        } else if (tokens[i] === ')' && depth > 0) {
-                            break;
-                        } else if (tokens[i] === '|') {
-                            i++; // Skip OR
                         } else {
-                            orGroup.push(parseFilterToken(tokens[i]));
-                            i++;
-                        }
-                        
-                        // Check if next is OR or end of OR group
-                        if (i >= tokens.length || (tokens[i] !== '|' && tokens[i] !== ')')) {
-                            break;
+                            // Regular token
+                            const nextToken = tokens[i];
+                            
+                            // Check if next is OR or end
+                            if (i + 1 < tokens.length && tokens[i + 1] === '|') {
+                                // More OR items coming
+                                orGroup.push(parseFilterToken(nextToken));
+                                i++;
+                            } else {
+                                // Last item in OR group
+                                orGroup.push(parseFilterToken(nextToken));
+                                i++;
+                                break;
+                            }
                         }
                     }
                     
                     andGroup.push({ type: 'OR', children: orGroup });
                 } else {
+                    // Single filter, not part of OR
                     andGroup.push(filter);
                     i++;
                 }
             } catch (e) {
-                // Skip invalid token but log it
                 console.warn(`Skipping invalid filter: ${token} - ${e.message}`);
                 i++;
             }
         }
     }
     
-    // Build result based on what we collected
+    // Build result
     let result;
     if (andGroup.length === 0) {
         result = { type: 'AND', children: [] };
@@ -429,7 +441,7 @@ function matchFilter(post, filter) {
 }
 
 /**
- * Recursively match AST node against post
+ * Match OR node with proper exclusion handling
  */
 function matchNode(post, node) {
     if (!node) return true;
@@ -440,7 +452,9 @@ function matchNode(post, node) {
         case 'AND':
             return node.children.every(child => matchNode(post, child));
         case 'OR':
-            return node.children.some(child => matchNode(post, child));
+            // OR matches if ANY child matches
+            const matches = node.children.some(child => matchNode(post, child));
+            return matches;
         default:
             return true;
     }

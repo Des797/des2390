@@ -211,6 +211,29 @@ class FileManager:
             target_dir = os.path.join(self.save_path, date_folder)
             self.ensure_directory(target_dir)
             
+            # Get file path and check if it exists
+            file_path = post_data.get("file_path")
+            if not file_path:
+                logger.error(f"No file_path in post data for {post_id}")
+                return False
+            
+            # Handle case where file_path might be just filename
+            if not os.path.isabs(file_path):
+                file_path = os.path.join(self.temp_path, file_path)
+            
+            if not os.path.exists(file_path):
+                # Try alternative: post_id + file_type
+                file_ext = post_data.get('file_type', '.jpg')
+                alt_path = os.path.join(self.temp_path, f"{post_id}{file_ext}")
+                
+                if os.path.exists(alt_path):
+                    file_path = alt_path
+                    logger.info(f"Found file at alternative path: {alt_path}")
+                else:
+                    logger.error(f"File not found for post {post_id}: {file_path}")
+                    logger.error(f"Also tried: {alt_path}")
+                    return False
+            
             # Move files
             file_path = post_data["file_path"]
             if os.path.exists(file_path):
@@ -219,6 +242,14 @@ class FileManager:
                 target_json = os.path.join(target_dir, f"{post_id}.json")
                 
                 shutil.move(file_path, target_file)
+            
+                # Move thumbnail if exists
+                thumb_path = file_path.replace(file_ext, '_thumb.jpg')
+                if os.path.exists(thumb_path):
+                    target_thumb = os.path.join(target_dir, f"{post_id}_thumb.jpg")
+                    shutil.move(thumb_path, target_thumb)
+                
+                # Move JSON
                 shutil.move(json_path, target_json)
                 
                 logger.info(f"Saved post {post_id} to {date_folder}")
@@ -228,7 +259,7 @@ class FileManager:
                 return False
                 
         except Exception as e:
-            logger.error(f"Failed to save post {post_id}: {e}")
+            logger.error(f"Failed to save post {post_id}: {e}", exc_info=True)
             return False
     
     def discard_post(self, post_id: int) -> bool:

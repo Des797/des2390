@@ -1,0 +1,8 @@
+Flask==2.3.0
+requests==2.31.0
+elasticsearch==8.9.0
+Flask-Compress==1.14
+
+# Optional: For video thumbnail generation
+# ffmpeg-python==0.2.0  # Uncomment if using Python wrapper
+# OR install ffmpeg binary separately

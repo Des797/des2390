@@ -16,7 +16,7 @@ class Database:
         return sqlite3.connect(self.db_path)
     
     def init_db(self):
-        """Initialize database tables"""
+        """Initialize database tables with optimized indexes"""
         logger.info("Initializing database...")
         conn = self.get_connection()
         c = conn.cursor()
@@ -38,11 +38,11 @@ class Database:
                      (id INTEGER PRIMARY KEY AUTOINCREMENT, post_id INTEGER, 
                       old_tags TEXT, new_tags TEXT, timestamp TEXT)""")
         
-        # New table for tag counts
+        # Tag counts table
         c.execute("""CREATE TABLE IF NOT EXISTS tag_counts
                      (tag TEXT PRIMARY KEY, count INTEGER DEFAULT 0)""")
         
-        # Post metadata cache table for fast queries
+        # Post metadata cache table
         c.execute("""CREATE TABLE IF NOT EXISTS post_cache
                      (post_id INTEGER PRIMARY KEY,
                       status TEXT,
@@ -60,15 +60,74 @@ class Database:
                       downloaded_at TEXT,
                       created_at TEXT)""")
         
-        # Create indexes for fast queries
+        # ===== OPTIMIZED INDEXES FOR FAST QUERIES =====
+        
+        # Single-column indexes (existing)
         c.execute("CREATE INDEX IF NOT EXISTS idx_status ON post_cache(status)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_timestamp ON post_cache(timestamp)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_score ON post_cache(score)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_owner ON post_cache(owner)")
         
+        # NEW: Composite indexes for common query patterns
+        c.execute("""CREATE INDEX IF NOT EXISTS idx_status_timestamp 
+                     ON post_cache(status, timestamp DESC)""")
+        
+        c.execute("""CREATE INDEX IF NOT EXISTS idx_status_score 
+                     ON post_cache(status, score DESC)""")
+        
+        c.execute("""CREATE INDEX IF NOT EXISTS idx_owner_status 
+                     ON post_cache(owner, status)""")
+        
+        c.execute("""CREATE INDEX IF NOT EXISTS idx_rating_status 
+                     ON post_cache(rating, status)""")
+        
+        # File type index for type: searches
+        c.execute("CREATE INDEX IF NOT EXISTS idx_file_type ON post_cache(file_type)")
+        
+        # Dimension indexes for width/height filters
+        c.execute("CREATE INDEX IF NOT EXISTS idx_dimensions ON post_cache(width, height)")
+        
+        # Tag counts index for autocomplete
+        c.execute("CREATE INDEX IF NOT EXISTS idx_tag_count ON tag_counts(count DESC)")
+        
+        # Search history index
+        c.execute("CREATE INDEX IF NOT EXISTS idx_search_timestamp ON search_history(timestamp DESC)")
+        
+        # Tag history index
+        c.execute("CREATE INDEX IF NOT EXISTS idx_tag_history_post ON tag_history(post_id)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_tag_history_timestamp ON tag_history(timestamp DESC)")
+        
         conn.commit()
         conn.close()
-        logger.info("Database initialized successfully")
+        logger.info("Database initialized with optimized indexes")
+        
+        # Log index statistics
+        #self._log_index_stats()
+        
+    def _log_index_stats(self):
+        """Log SQLite index information for diagnostics"""
+        try:
+            conn = self.get_connection()
+            c = conn.cursor()
+
+            # List indexes
+            c.execute("""
+                SELECT name, tbl_name
+                FROM sqlite_master
+                WHERE type = 'index'
+                  AND name NOT LIKE 'sqlite_%'
+                ORDER BY tbl_name, name
+            """)
+            indexes = c.fetchall()
+
+            logger.info("SQLite index statistics:")
+            for name, table in indexes:
+                logger.info(f"  Index: {name} (table: {table})")
+
+            conn.close()
+
+        except Exception as e:
+            logger.warning(f"Failed to log index stats: {e}")
     
     # Config operations
     def save_config(self, key: str, value: str):

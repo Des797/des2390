@@ -202,6 +202,21 @@ class Scraper:
         
         # Download
         if self.api_client.download_file(file_url, temp_file):
+            # Generate video thumbnail if it's a video
+            is_video = file_ext.lower() in ['.mp4', '.webm']
+            if is_video:
+                try:
+                    from video_processor import get_video_processor
+                    processor = get_video_processor()
+                    thumb_path = processor.generate_thumbnail_at_percentage(
+                        temp_file, 
+                        percentage=10.0
+                    )
+                    if thumb_path:
+                        logger.debug(f"Generated thumbnail for video {post_id}")
+                except Exception as e:
+                    logger.warning(f"Thumbnail generation failed for {post_id}: {e}")
+            
             # Create post metadata
             post_data = {
                 "id": post_id,

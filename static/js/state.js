@@ -35,7 +35,6 @@ function updateURLState(params) {
         }
     });
     
-    historyState.suppressNextPopState = true;
     history.pushState(params, '', url);
 }
 
