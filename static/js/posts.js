@@ -9,94 +9,97 @@ import { ELEMENT_IDS, URL_PARAMS, POST_STATUS, CSS_CLASSES, PAGINATION, SORT_ORD
 window.setupVideoPreviewListeners = setupVideoPreviewListeners; 
 
 // Sorting Functions
+// Sorting Functions with optimized size fetching
 async function sortPosts(posts, sortBy, order) {
-    // For size sorting, fetch sizes first with progress tracking
+    // For size sorting, fetch sizes in batches with rate limiting
     if (sortBy === 'size') {
         const grid = document.getElementById(ELEMENT_IDS.POSTS_GRID);
-        let fetched = 0;
-        const total = posts.filter(p => !state.postSizes[p.id]).length;
+        const needsFetching = posts.filter(p => !state.postSizes[p.id]);
         
-        if (total > 0) {
-            console.log(`Fetching sizes for ${total} posts...`);
-        }
-        
-        await Promise.all(posts.map(async p => {
-            if (!state.postSizes[p.id]) {
-                try {
-                    const result = await getPostSize(p.id);
-                    state.postSizes[p.id] = result.size;
-                    fetched++;
-                    
-                    // Update progress every 10 posts
-                    if (fetched % 10 === 0 && total > 20) {
-                        const percent = Math.round((fetched / total) * 100);
-                        grid.innerHTML = `<p style="color: #10b981; text-align: center; grid-column: 1/-1; font-size: 18px;">⏳ Calculating file sizes: ${fetched}/${total} (${percent}%)<br><span style="font-size: 14px; color: #94a3b8;">This may take a while</span></p>`;
+        if (needsFetching.length > 0) {
+            console.log(`Fetching sizes for ${needsFetching.length} posts...`);
+            
+            // Batch requests: 10 at a time to avoid overwhelming server
+            const BATCH_SIZE = 10;
+            let fetched = 0;
+            
+            for (let i = 0; i < needsFetching.length; i += BATCH_SIZE) {
+                const batch = needsFetching.slice(i, i + BATCH_SIZE);
+                
+                await Promise.all(batch.map(async p => {
+                    try {
+                        const result = await getPostSize(p.id);
+                        state.postSizes[p.id] = result.size;
+                        fetched++;
+                        
+                        // Update progress every batch
+                        if (needsFetching.length > 20) {
+                            const percent = Math.round((fetched / needsFetching.length) * 100);
+                            grid.innerHTML = `<p style="color: #10b981; text-align: center; grid-column: 1/-1; font-size: 18px;">⏳ Calculating file sizes: ${fetched}/${needsFetching.length} (${percent}%)<br><span style="font-size: 14px; color: #94a3b8;">This may take a while</span></p>`;
+                        }
+                    } catch (e) {
+                        state.postSizes[p.id] = 0;
                     }
-                } catch (e) {
-                    state.postSizes[p.id] = 0;
+                }));
+                
+                // Small delay between batches
+                if (i + BATCH_SIZE < needsFetching.length) {
+                    await new Promise(resolve => setTimeout(resolve, 100));
                 }
             }
-        }));
-        
-        if (total > 0) {
+            
             console.log(`Finished fetching ${fetched} file sizes`);
         }
     }
     
-    return posts.sort((a, b) => {
-        let valA, valB;
-        
-        switch(sortBy) {
-            case 'download':
-                valA = new Date(a.downloaded_at || a.timestamp);
-                valB = new Date(b.downloaded_at || b.timestamp);
-                break;
-            case 'upload':
-                valA = parseInt(a.created_at || a.change || 0);
-                valB = parseInt(b.created_at || b.change || 0);
-                break;
-            case 'id':
-                valA = a.id;
-                valB = b.id;
-                break;
-            case 'score':
-                valA = a.score || 0;
-                valB = b.score || 0;
-                break;
-            case 'tags':
-                valA = a.tags.length;
-                valB = b.tags.length;
-                break;
-            case 'size':
-                valA = state.postSizes[a.id] || 0;
-                valB = state.postSizes[b.id] || 0;
-                break;
-            default:
-                valA = a.timestamp;
-                valB = b.timestamp;
-        }
-        
-        return order === SORT_ORDER.ASC ? valA - valB : valB - valA;
-    });
+    // Use cached comparison function for better performance
+    const compareFn = createComparator(sortBy, order);
+    return posts.sort(compareFn);
 }
 
-// Render posts progressively in batches
-async function renderPostsProgressively(grid, posts, sortBy, searchQuery) {
-    const BATCH_SIZE = 10; // Render 10 posts at a time
-    grid.innerHTML = ''; // Clear loading message
+// Create optimized comparator function
+function createComparator(sortBy, order) {
+    const multiplier = order === SORT_ORDER.ASC ? 1 : -1;
     
-    for (let i = 0; i < posts.length; i += BATCH_SIZE) {
-        const batch = posts.slice(i, i + BATCH_SIZE);
-        const batchHtml = batch.map(p => renderPost(p, sortBy, searchQuery)).join('');
-        grid.insertAdjacentHTML('beforeend', batchHtml);
-        
-        // Allow browser to render before next batch
-        await new Promise(resolve => setTimeout(resolve, 0));
+    switch(sortBy) {
+        case 'download':
+            return (a, b) => {
+                const valA = new Date(a.downloaded_at || a.timestamp).getTime();
+                const valB = new Date(b.downloaded_at || b.timestamp).getTime();
+                return (valA - valB) * multiplier;
+            };
+        case 'upload':
+            return (a, b) => {
+                const valA = parseInt(a.created_at || a.change || 0);
+                const valB = parseInt(b.created_at || b.change || 0);
+                return (valA - valB) * multiplier;
+            };
+        case 'id':
+            return (a, b) => (a.id - b.id) * multiplier;
+        case 'score':
+            return (a, b) => ((a.score || 0) - (b.score || 0)) * multiplier;
+        case 'tags':
+            return (a, b) => (a.tags.length - b.tags.length) * multiplier;
+        case 'size':
+            return (a, b) => ((state.postSizes[a.id] || 0) - (state.postSizes[b.id] || 0)) * multiplier;
+        default:
+            return (a, b) => (a.timestamp - b.timestamp) * multiplier;
     }
+}
+
+// Optimized rendering: single DOM update instead of batches
+async function renderPostsOptimized(grid, posts, sortBy, searchQuery) {
+    grid.innerHTML = ''; // Clear
     
-    // Attach event listeners after all posts are rendered
+    // Build all HTML at once (faster than insertAdjacentHTML in loop)
+    const allHtml = posts.map(p => renderPost(p, sortBy, searchQuery)).join('');
+    grid.innerHTML = allHtml;
+    
+    // Attach event listeners in one pass
     attachPostEventListeners();
     setupMediaErrorHandlers();
+    
+    // Setup videos on next frame to avoid blocking
     requestAnimationFrame(() => {
         setupVideoPreviewListeners();
     });

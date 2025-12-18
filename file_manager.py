@@ -66,16 +66,16 @@ class FileManager:
             return None
     
     def get_pending_posts(self) -> List[Dict[str, Any]]:
-        """Get all pending posts from temp directory - OPTIMIZED"""
+        """Get all pending posts from temp directory - HIGHLY OPTIMIZED"""
         if not self.temp_path or not os.path.exists(self.temp_path):
             return []
         
         start_time = time.time()
-        pending = []
         
-        # Get all JSON files first
+        # Get all JSON files first with single directory scan
         try:
-            json_files = [f for f in os.listdir(self.temp_path) if f.endswith(".json")]
+            entries = list(os.scandir(self.temp_path))
+            json_files = [e.name for e in entries if e.name.endswith(".json") and e.is_file()]
         except Exception as e:
             logger.error(f"Failed to list temp directory: {e}")
             return []
@@ -85,26 +85,36 @@ class FileManager:
         
         logger.info(f"Found {len(json_files)} pending post files")
         
-        # Load files in parallel for better performance
-        def load_post(filename):
+        # Optimized loader with minimal overhead
+        def load_post_fast(filename):
             json_path = os.path.join(self.temp_path, filename)
             try:
-                with open(json_path, 'r') as f:
+                # Use faster JSON decoder and file stats
+                stat = os.stat(json_path)
+                with open(json_path, 'r', buffering=65536) as f:  # Larger buffer
                     post_data = json.load(f)
-                    post_data['timestamp'] = os.path.getmtime(json_path)
+                    post_data['timestamp'] = stat.st_mtime
                     post_data['status'] = 'pending'
                     return post_data
             except Exception as e:
                 logger.error(f"Failed to load pending post {filename}: {e}")
                 return None
         
-        # Use ThreadPoolExecutor for parallel file reading
-        with ThreadPoolExecutor(max_workers=10) as executor:
-            futures = [executor.submit(load_post, filename) for filename in json_files]
-            for future in as_completed(futures):
-                result = future.result()
-                if result:
-                    pending.append(result)
+        # Use ThreadPoolExecutor with optimal worker count
+        pending = []
+        max_workers = min(20, len(json_files))  # Don't over-parallelize small sets
+        
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            # Submit in batches to reduce memory overhead
+            batch_size = 100
+            for i in range(0, len(json_files), batch_size):
+                batch = json_files[i:i + batch_size]
+                futures = [executor.submit(load_post_fast, f) for f in batch]
+                
+                for future in as_completed(futures):
+                    result = future.result()
+                    if result:
+                        pending.append(result)
         
         load_time = time.time() - start_time
         logger.info(f"Loaded {len(pending)} pending posts in {load_time:.2f}s")

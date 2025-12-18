@@ -17,30 +17,51 @@ class PostService:
     def __init__(self, file_manager, database):
         self.file_manager = file_manager
         self.database = database
+        self._cache_initialized = False  # Track initialization state
+    
+    def _ensure_cache_initialized(self):
+        """Ensure cache is initialized - runs ONCE per app lifecycle"""
+        if not self._cache_initialized:
+            if self.database.is_cache_empty():
+                logger.info("Cache is empty, performing initial population...")
+                self.database.rebuild_cache_from_files(self.file_manager)
+            self._cache_initialized = True
     
     def get_posts(self, filter_type: str = 'all') -> List[Dict[str, Any]]:
         """
         Get posts - uses cache for speed!
-        Only rebuilds cache on first run
+        Cache initialization happens once per app lifecycle
         """
         filter_type = validate_filter_type(filter_type)
         
-        # Check if cache needs initial population
-        if self.database.is_cache_empty():
-            logger.info("Cache is empty, performing initial population...")
-            self.database.rebuild_cache_from_files(self.file_manager)
+        # Ensure cache is ready (only runs once)
+        self._ensure_cache_initialized()
         
         # Get from cache (FAST!)
         status = None if filter_type == 'all' else filter_type
         posts = self.database.get_cached_posts(
             status=status,
-            limit=100000,  # Get all posts
+            limit=100000,
             sort_by='timestamp',
             order='DESC'
         )
         
         logger.info(f"Retrieved {len(posts)} posts from cache")
         return posts
+    
+    def get_posts_cached(self, status=None, limit=100000, sort_by='timestamp', order='DESC'):
+        """
+        Direct cache access for streaming endpoint
+        Assumes cache is already initialized
+        """
+        self._ensure_cache_initialized()
+        
+        return self.database.get_cached_posts(
+            status=status,
+            limit=limit,
+            sort_by=sort_by,
+            order=order
+        )
     
     def save_post(self, post_id: int) -> bool:
         """Save a pending post to archive - WITH INCREMENTAL CACHE UPDATE"""

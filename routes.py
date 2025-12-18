@@ -152,7 +152,6 @@ def create_routes(app, config, services):
         scraper_service.stop_scraper()
         return jsonify({"success": True})
     
-    # Post routes
     @app.route("/api/posts")
     @login_required
     def get_posts():
@@ -174,21 +173,11 @@ def create_routes(app, config, services):
                 start_time = time.time()
                 
                 # Send initial status
-                yield f"data: {json.dumps({'type': 'status', 'message': 'Checking cache...'})}\n\n"
+                yield f"data: {json.dumps({'type': 'status', 'message': 'Loading from cache...'})}\n\n"
                 
-                # Check if cache needs rebuilding
-                from database import Database
-                db = Database(config.DATABASE_PATH)
-                
-                if db.is_cache_empty():
-                    yield f"data: {json.dumps({'type': 'status', 'message': 'First run - building cache from files...'})}\n\n"
-                    db.rebuild_cache_from_files(file_manager)
-                
-                # Get posts from cache (FAST!)
-                yield f"data: {json.dumps({'type': 'status', 'message': 'Loading posts from cache...'})}\n\n"
-                
+                # Get posts from cache (FAST!) - cache check is in service layer
                 status = None if filter_type == 'all' else filter_type
-                posts = db.get_cached_posts(
+                posts = post_service.get_posts_cached(
                     status=status,
                     limit=100000,
                     sort_by='timestamp',
