@@ -204,10 +204,16 @@ class Scraper:
         if self.api_client.download_file(file_url, temp_file):
             # Generate video thumbnail if it's a video
             is_video = file_ext.lower() in ['.mp4', '.webm']
+            duration = None
             if is_video:
                 try:
                     from video_processor import get_video_processor
                     processor = get_video_processor()
+                    
+                    # Get video duration
+                    duration = processor.get_video_duration(temp_file)
+                    
+                    # Generate thumbnail
                     thumb_path = processor.generate_thumbnail_at_percentage(
                         temp_file, 
                         percentage=10.0
@@ -215,7 +221,7 @@ class Scraper:
                     if thumb_path:
                         logger.debug(f"Generated thumbnail for video {post_id}")
                 except Exception as e:
-                    logger.warning(f"Thumbnail generation failed for {post_id}: {e}")
+                    logger.warning(f"Video processing failed for {post_id}: {e}")
             
             # Create post metadata
             post_data = {
@@ -233,6 +239,7 @@ class Scraper:
                 "created_at": post.get("created_at", ""),
                 "change": post.get("change", ""),
                 "file_type": file_ext.lower(),
+                "duration": duration,  # Add duration field
                 "downloaded_at": datetime.now().isoformat(),
                 "status": "pending",
                 "timestamp": time.time()

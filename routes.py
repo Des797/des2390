@@ -6,7 +6,7 @@ import os
 from flask import request, jsonify, render_template, session, redirect, url_for, send_from_directory, Response
 from functools import wraps
 from exceptions import ValidationError, PostNotFoundError, StorageError
-from validators import validate_username, validate_password
+from validators import validate_username, validate_password, validate_post_id
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,6 @@ def create_routes(app, config, services):
     @login_required
     def index():
         tag_counts = tag_service.get_tag_counts()
-        import json
         return render_template("index.html", tag_counts=json.dumps(tag_counts))
     
     # Status route
@@ -153,15 +152,24 @@ def create_routes(app, config, services):
         scraper_service.stop_scraper()
         return jsonify({"success": True})
     
+    # FIXED: Main posts endpoint with proper error handling
     @app.route("/api/posts")
     @login_required
     def get_posts():
         try:
             filter_type = request.args.get('filter', 'all')
+            logger.info(f"Loading posts with filter: {filter_type}")
+            
             posts = post_service.get_posts(filter_type)
+            logger.info(f"Successfully loaded {len(posts)} posts")
+            
             return jsonify(posts)
         except ValidationError as e:
+            logger.error(f"Validation error loading posts: {e}")
             return jsonify({"error": str(e)}), 400
+        except Exception as e:
+            logger.error(f"Unexpected error loading posts: {e}", exc_info=True)
+            return jsonify({"error": f"Failed to load posts: {str(e)}"}), 500
 
     @app.route("/api/posts/stream")
     @login_required
@@ -176,7 +184,7 @@ def create_routes(app, config, services):
                 # Send initial status
                 yield f"data: {json.dumps({'type': 'status', 'message': 'Loading from cache...'})}\n\n"
                 
-                # Get posts from cache (FAST!) - cache check is in service layer
+                # Get posts from cache (FAST!)
                 status = None if filter_type == 'all' else filter_type
                 posts = post_service.get_posts_cached(
                     status=status,
@@ -217,13 +225,21 @@ def create_routes(app, config, services):
     @login_required
     def get_pending():
         """Legacy endpoint"""
-        return jsonify(post_service.get_posts('pending'))
+        try:
+            return jsonify(post_service.get_posts('pending'))
+        except Exception as e:
+            logger.error(f"Error loading pending posts: {e}", exc_info=True)
+            return jsonify({"error": str(e)}), 500
     
     @app.route("/api/saved")
     @login_required
     def get_saved():
         """Legacy endpoint"""
-        return jsonify(post_service.get_posts('saved'))
+        try:
+            return jsonify(post_service.get_posts('saved'))
+        except Exception as e:
+            logger.error(f"Error loading saved posts: {e}", exc_info=True)
+            return jsonify({"error": str(e)}), 500
     
     @app.route("/api/save/<int:post_id>", methods=["POST"])
     @login_required
@@ -349,7 +365,6 @@ def create_routes(app, config, services):
     @app.route("/saved/<date_folder>/<path:filename>")
     @login_required
     def serve_saved(date_folder, filename):
-        import os
         folder_path = os.path.join(file_manager.save_path, date_folder)
         return send_from_directory(folder_path, filename)
     

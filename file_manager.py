@@ -95,6 +95,9 @@ class FileManager:
                     post_data = json.load(f)
                     post_data['timestamp'] = stat.st_mtime
                     post_data['status'] = 'pending'
+                    # Ensure duration is included if it exists
+                    if 'duration' not in post_data:
+                        post_data['duration'] = None
                     return post_data
             except Exception as e:
                 logger.error(f"Failed to load pending post {filename}: {e}")
@@ -159,6 +162,10 @@ class FileManager:
                         post_data['timestamp'] = os.path.getmtime(json_path)
                         post_data['date_folder'] = date_folder
                         post_data['status'] = 'saved'
+                        
+                        # Ensure duration is included if it exists
+                        if 'duration' not in post_data:
+                            post_data['duration'] = None
                         
                         # Ensure file_path is set
                         post_id = post_data['id']
@@ -234,33 +241,32 @@ class FileManager:
                     logger.error(f"Also tried: {alt_path}")
                     return False
             
-            # Move files
-            file_path = post_data["file_path"]
-            if os.path.exists(file_path):
-                file_ext = post_data.get('file_type', os.path.splitext(file_path)[1])
-                target_file = os.path.join(target_dir, f"{post_id}{file_ext}")
-                target_json = os.path.join(target_dir, f"{post_id}.json")
-                
-                shutil.move(file_path, target_file)
+            # Now file_path is verified to exist - proceed with move
+            file_ext = post_data.get('file_type', os.path.splitext(file_path)[1])
+            target_file = os.path.join(target_dir, f"{post_id}{file_ext}")
+            target_json = os.path.join(target_dir, f"{post_id}.json")
+            
+            # Move media file
+            shutil.move(file_path, target_file)
+            logger.debug(f"Moved {file_path} to {target_file}")
 
-                # Move thumbnail if exists (from .thumbnails subdirectory)
-                video_dir = os.path.dirname(file_path)
-                thumb_path = os.path.join(video_dir, '.thumbnails', f"{post_id}_thumb.jpg")
-                if os.path.exists(thumb_path):
-                    # Create .thumbnails in target directory
-                    target_thumb_dir = os.path.join(target_dir, '.thumbnails')
-                    os.makedirs(target_thumb_dir, exist_ok=True)
-                    target_thumb = os.path.join(target_thumb_dir, f"{post_id}_thumb.jpg")
-                    shutil.move(thumb_path, target_thumb)
-                
-                # Move JSON
-                shutil.move(json_path, target_json)
-                
-                logger.info(f"Saved post {post_id} to {date_folder}")
-                return True
-            else:
-                logger.error(f"File not found for post {post_id}")
-                return False
+            # Move thumbnail if exists (from .thumbnails subdirectory)
+            video_dir = os.path.dirname(file_path)
+            thumb_path = os.path.join(video_dir, '.thumbnails', f"{post_id}_thumb.jpg")
+            if os.path.exists(thumb_path):
+                # Create .thumbnails in target directory
+                target_thumb_dir = os.path.join(target_dir, '.thumbnails')
+                os.makedirs(target_thumb_dir, exist_ok=True)
+                target_thumb = os.path.join(target_thumb_dir, f"{post_id}_thumb.jpg")
+                shutil.move(thumb_path, target_thumb)
+                logger.debug(f"Moved thumbnail to {target_thumb}")
+            
+            # Move JSON
+            shutil.move(json_path, target_json)
+            logger.debug(f"Moved JSON to {target_json}")
+            
+            logger.info(f"Saved post {post_id} to {date_folder}")
+            return True
                 
         except Exception as e:
             logger.error(f"Failed to save post {post_id}: {e}", exc_info=True)

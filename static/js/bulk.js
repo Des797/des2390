@@ -78,7 +78,7 @@ async function performBulkOperation(operation, posts) {
             failed++;
         }
         
-        processed++;
+processed++;
         const percent = Math.round((processed / posts.length) * 100);
         progressBar.style.width = percent + '%';
         progressBar.textContent = percent + '%';
@@ -95,7 +95,26 @@ async function performBulkOperation(operation, posts) {
     state.bulkOperationActive = false;
     clearSelection();
     
-    await loadPosts();
+    // Don't refresh - just remove items from display and update cache
+    const processedIds = new Set(posts.map(p => typeof p === 'number' ? p : p.id));
+    
+    // Remove from state
+    state.allPosts = state.allPosts.filter(p => !processedIds.has(p.id));
+    
+    // Remove from display with animation
+    processedIds.forEach(postId => {
+        const postEl = document.querySelector(`[data-post-id="${postId}"]`);
+        if (postEl) {
+            postEl.style.transition = 'opacity 0.3s, transform 0.3s';
+            postEl.style.opacity = '0';
+            postEl.style.transform = 'scale(0.8)';
+            setTimeout(() => postEl.remove(), 300);
+        }
+    });
+    
+    // Update counts
+    const totalResults = document.getElementById(ELEMENT_IDS.POSTS_TOTAL_RESULTS);
+    totalResults.textContent = `Total: ${state.allPosts.length} posts`;
     
     if (!cancelled) {
         showNotification(`Bulk ${operation} completed: ${succeeded} succeeded, ${failed} failed`);

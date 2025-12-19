@@ -1,3 +1,4 @@
+import sqlite3
 import logging
 
 logger = logging.getLogger(__name__)
@@ -59,8 +60,17 @@ def init_schema(core):
                 timestamp REAL,
                 file_path TEXT,
                 downloaded_at TEXT,
-                created_at TEXT
+                created_at TEXT,
+                duration REAL
             )""")
+            
+            # Add duration column if it doesn't exist (migration)
+            try:
+                c.execute("SELECT duration FROM post_cache LIMIT 1")
+            except sqlite3.OperationalError:
+                logger.info("Adding duration column to post_cache table...")
+                c.execute("ALTER TABLE post_cache ADD COLUMN duration REAL")
+                logger.info("Duration column added successfully")
 
             # ---- INDEXES ----
             indexes = [

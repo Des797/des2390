@@ -2,6 +2,7 @@
 import os
 import subprocess
 import logging
+import re  
 from pathlib import Path
 from typing import Optional
 
@@ -89,6 +90,15 @@ class VideoProcessor:
             return None
         
     def get_video_duration(self, video_path: str) -> Optional[float]:
+        """
+        Get video duration in seconds using ffprobe
+        
+        Args:
+            video_path: Path to video file
+        
+        Returns:
+            Duration in seconds or None if failed
+        """
         if not self.ffmpeg_available:
             return None
         

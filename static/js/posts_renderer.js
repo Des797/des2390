@@ -41,10 +41,10 @@ function formatVideoDuration(seconds) {
 }
 
 /**
- * Setup video hover-to-play (FIXED)
+ * Setup video hover-to-play
  */
 function setupVideoPreviewListeners() {
-    document.querySelectorAll('.media-video').forEach(container => {
+    document.querySelectorAll('.gallery-item-media.media-video').forEach(container => {
         const video = container.querySelector('video');
         if (!video) return;
         
@@ -60,7 +60,12 @@ function setupVideoPreviewListeners() {
         // Generate thumbnail URL
         const postId = video.dataset.postId;
         const videoSrc = video.src;
-        const thumbUrl = videoSrc.replace(/\.(mp4|webm)$/i, '_thumb.jpg');
+        const videoPath = new URL(videoSrc).pathname;
+        const pathParts = videoPath.split('/');
+        const filename = pathParts.pop();
+        const thumbFilename = filename.replace(/\.(mp4|webm)$/i, '_thumb.jpg');
+        pathParts.push('.thumbnails', thumbFilename);
+        const thumbUrl = pathParts.join('/');
         
         // Set poster if thumbnail exists
         if (!video.poster) {
@@ -93,6 +98,7 @@ function setupVideoPreviewListeners() {
             video.currentTime = 0;
         });
     });
+    
     // Generate missing thumbnails on-demand
     generateMissingThumbnails();
 }

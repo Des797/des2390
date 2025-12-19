@@ -9,7 +9,6 @@ class PostCacheRepository:
     def __init__(self, core):
         self.core = core
 
-    # ---------------- Cache Management ----------------
     def cache_post(self, post_data: Dict[str, Any]) -> bool:
         """Cache a single post (incremental update)"""
         try:
@@ -19,8 +18,8 @@ class PostCacheRepository:
                         """INSERT OR REPLACE INTO post_cache 
                            (post_id, status, title, owner, score, rating, 
                             width, height, file_type, tags, date_folder, 
-                            timestamp, file_path, downloaded_at, created_at)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                            timestamp, file_path, downloaded_at, created_at, duration)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                         (
                             post_data['id'],
                             post_data.get('status', 'pending'),
@@ -36,7 +35,8 @@ class PostCacheRepository:
                             post_data.get('timestamp', 0),
                             post_data.get('file_path', ''),
                             post_data.get('downloaded_at', ''),
-                            post_data.get('created_at', '')
+                            post_data.get('created_at', ''),
+                            post_data.get('duration', None)  # Add duration
                         )
                     )
             logger.info(f"Cached post {post_data['id']}")
@@ -78,7 +78,6 @@ class PostCacheRepository:
             logger.error(f"Failed to update post {post_id} status: {e}", exc_info=True)
             return False
 
-    # ---------------- Cache Queries ----------------
     def get_cached_posts(
         self, 
         status: Optional[str] = None,
@@ -124,7 +123,8 @@ class PostCacheRepository:
                     'timestamp': row[11],
                     'file_path': row[12],
                     'downloaded_at': row[13],
-                    'created_at': row[14]
+                    'created_at': row[14],
+                    'duration': row[15] if len(row) > 15 else None
                 })
             return posts
         except Exception as e:

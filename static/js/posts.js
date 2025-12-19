@@ -337,37 +337,27 @@ function extractStatusOperator(query) {
     return { status: null, cleanedQuery: query };
 }
 
-// Show search error below search bar
+// Show search error above gallery grid
 function showSearchError(message) {
     let errorDiv = document.getElementById('searchErrorDisplay');
     if (!errorDiv) {
         errorDiv = document.createElement('div');
         errorDiv.id = 'searchErrorDisplay';
-        errorDiv.style.cssText = `
-            background: #7f1d1d;
-            color: #fecaca;
-            padding: 12px;
-            border-radius: 6px;
-            margin-top: 10px;
-            font-size: 13px;
-            border: 1px solid #991b1b;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        `;
         
-        const searchInput = document.getElementById(ELEMENT_IDS.POSTS_SEARCH_INPUT);
-        searchInput.parentElement.appendChild(errorDiv);
+        // Insert before the gallery grid
+        const gallery = document.querySelector('.gallery');
+        const grid = document.getElementById(ELEMENT_IDS.POSTS_GRID);
+        gallery.insertBefore(errorDiv, grid);
     }
     
     errorDiv.innerHTML = `<strong>⚠️ Search Error:</strong> ${message}`;
-    errorDiv.style.display = 'flex';
+    errorDiv.classList.add('show');
 }
 
 function hideSearchError() {
     const errorDiv = document.getElementById('searchErrorDisplay');
     if (errorDiv) {
-        errorDiv.style.display = 'none';
+        errorDiv.classList.remove('show');
     }
 }
 
@@ -402,16 +392,22 @@ async function savePostAction(postId) {
             }).replace(/\//g, '.');
         }
         
-        // Remove from display if filtering
+        // Remove from display if filtering for pending, preserving transition
         if (state.postsStatusFilter === 'pending') {
             const postEl = document.querySelector(`[data-post-id="${postId}"]`);
+
             if (postEl) {
                 postEl.style.transition = 'opacity 0.3s';
                 postEl.style.opacity = '0';
-                setTimeout(() => postEl.remove(), 300);
+
+                await new Promise(resolve => {
+                    setTimeout(resolve, 300);
+                });
             }
+
+            await removePostAndLoadNext(postId);
         }
-        
+
         searchCache.clear();
     } catch (error) {
         showNotification('Failed to save post', 'error');
@@ -422,19 +418,23 @@ async function discardPostAction(postId) {
     try {
         await apiDiscardPost(postId);
         showNotification('Post discarded');
-        
-        // Remove from state
-        state.allPosts = state.allPosts.filter(p => p.id !== postId);
-        
-        // Remove from display with animation
+
         const postEl = document.querySelector(`[data-post-id="${postId}"]`);
+
+        // Animate removal
         if (postEl) {
             postEl.style.transition = 'opacity 0.3s, transform 0.3s';
             postEl.style.opacity = '0';
             postEl.style.transform = 'scale(0.8)';
-            setTimeout(() => postEl.remove(), 300);
+
+            await new Promise(resolve => {
+                setTimeout(resolve, 300);
+            });
         }
-        
+
+        // Centralized removal + load next
+        await removePostAndLoadNext(postId);
+
         searchCache.clear();
         rebuildModalIndexCache();
     } catch (error) {
@@ -442,27 +442,79 @@ async function discardPostAction(postId) {
     }
 }
 
+
 async function deletePostAction(postId, dateFolder) {
     try {
         await apiDeletePost(postId, dateFolder);
         showNotification('Post deleted');
-        
-        // Remove from state
-        state.allPosts = state.allPosts.filter(p => p.id !== postId);
-        
-        // Remove from display with animation
+
         const postEl = document.querySelector(`[data-post-id="${postId}"]`);
+
+        // Animate removal (preserve older behavior)
         if (postEl) {
             postEl.style.transition = 'opacity 0.3s, transform 0.3s';
             postEl.style.opacity = '0';
             postEl.style.transform = 'scale(0.8)';
-            setTimeout(() => postEl.remove(), 300);
+
+            await new Promise(resolve => {
+                setTimeout(resolve, 300);
+            });
         }
-        
+
+        // Centralized removal + load next
+        await removePostAndLoadNext(postId);
+
         searchCache.clear();
         rebuildModalIndexCache();
     } catch (error) {
         showNotification('Failed to delete post', 'error');
+    }
+}
+
+
+async function removePostAndLoadNext(postId) {
+    // Remove from state
+    const postIndex = state.allPosts.findIndex(p => p.id === postId);
+    if (postIndex !== -1) {
+        state.allPosts.splice(postIndex, 1);
+    }
+    
+    // Remove from display with animation
+    const postEl = document.querySelector(`[data-post-id="${postId}"]`);
+    if (postEl) {
+        postEl.style.transition = 'opacity 0.3s, transform 0.3s';
+        postEl.style.opacity = '0';
+        postEl.style.transform = 'scale(0.8)';
+        
+        setTimeout(async () => {
+            // Calculate if we need to load next post
+            const perPage = parseInt(document.getElementById(ELEMENT_IDS.POSTS_PER_PAGE).value);
+            const start = (state.postsPage - 1) * perPage;
+            const end = start + perPage;
+            const nextPost = state.allPosts[end - 1]; // The post that would be on next page
+            
+            if (nextPost) {
+                // Render the next post in place of removed one
+                const sortBy = state.postsSortBy;
+                const searchQuery = state.postsSearch;
+                const newPostHtml = renderPost(nextPost, sortBy, searchQuery);
+                
+                postEl.outerHTML = newPostHtml;
+                
+                // Re-attach event listeners to new post
+                attachPostEventListeners();
+                setupMediaErrorHandlers();
+                requestAnimationFrame(() => setupVideoPreviewListeners());
+            } else {
+                // No more posts, just remove
+                postEl.remove();
+            }
+            
+            // Update total count
+            document.getElementById(ELEMENT_IDS.POSTS_TOTAL_RESULTS).textContent = `Total: ${state.allPosts.length} posts`;
+            updateBulkControls();
+            rebuildModalIndexCache();
+        }, 300);
     }
 }
 
@@ -650,6 +702,7 @@ export {
     savePostAction,
     discardPostAction,
     deletePostAction,
+    removePostAndLoadNext,
     updateBulkControls,
     toggleSortOrder
 };
