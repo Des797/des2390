@@ -1,11 +1,12 @@
 :root {
-    --bg-main: #0f172a;
-    --bg-panel: #1e293b;
-    --border-main: #334155;
-    --txt-main: #e2e8f0;
-    --txt-muted: #94a3b8;
-    --txt-muted-2: #64748b;
-    --accent: #10b981;
+    --bg-main: #0f2a1a;
+    --bg-panel: #1e3b29;
+    --border-main: #335533;
+    --txt-main: #9df29f;
+    --txt-muted: #94b89b;
+    --txt-muted-2: #648b72;
+    --accent: #3cb07c;
+    --accent-dark: #2b805a;
     --accent-strong: #059669;
     --danger: #ef4444;
     --danger-txt: #fecaca;

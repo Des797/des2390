@@ -171,6 +171,11 @@ async function getPostSize(postId) {
     return await apiCall(endpoint);
 }
 
+async function getVideoDuration(postId) {
+    const endpoint = `/api/post/${postId}/duration`;
+    return await apiCall(endpoint);
+}
+
 // Autocomplete
 async function getAutocompleteTags(query) {
     return await apiCall(`${API_ENDPOINTS.AUTOCOMPLETE}?q=${encodeURIComponent(query)}`);
@@ -194,5 +199,6 @@ export {
     getAutocompleteTags,
     loadPostsStreaming,
     loadPostsOptimized,
-    loadPostsSmart
+    loadPostsSmart,
+    getVideoDuration
 };

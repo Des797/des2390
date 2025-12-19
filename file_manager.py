@@ -95,7 +95,7 @@ class FileManager:
                     post_data = json.load(f)
                     post_data['timestamp'] = stat.st_mtime
                     post_data['status'] = 'pending'
-                    # Ensure duration is included if it exists
+                    # Duration will be calculated on-demand, not stored
                     if 'duration' not in post_data:
                         post_data['duration'] = None
                     return post_data
@@ -163,7 +163,7 @@ class FileManager:
                         post_data['date_folder'] = date_folder
                         post_data['status'] = 'saved'
                         
-                        # Ensure duration is included if it exists
+                        # Duration will be calculated on-demand
                         if 'duration' not in post_data:
                             post_data['duration'] = None
                         
@@ -197,8 +197,49 @@ class FileManager:
         """Get all posts (pending + saved)"""
         return self.get_pending_posts() + self.get_saved_posts()
     
+    def _safe_move_file(self, src: str, dst: str, max_retries: int = 3, retry_delay: float = 0.5) -> bool:
+        """
+        Safely move a file with retry logic for locked files
+        
+        Args:
+            src: Source file path
+            dst: Destination file path
+            max_retries: Number of retry attempts
+            retry_delay: Delay between retries in seconds
+            
+        Returns:
+            True if move succeeded, False otherwise
+        """
+        for attempt in range(max_retries):
+            try:
+                # Ensure destination directory exists
+                os.makedirs(os.path.dirname(dst), exist_ok=True)
+                
+                # Try to move the file
+                shutil.move(src, dst)
+                return True
+                
+            except PermissionError as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"File locked (attempt {attempt + 1}/{max_retries}): {src}. Retrying in {retry_delay}s...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                else:
+                    logger.error(f"Failed to move file after {max_retries} attempts (file locked): {src}")
+                    return False
+                    
+            except FileNotFoundError as e:
+                logger.error(f"Source file not found: {src}")
+                return False
+                
+            except Exception as e:
+                logger.error(f"Unexpected error moving file {src} to {dst}: {e}")
+                return False
+        
+        return False
+    
     def save_post_to_archive(self, post_id: int) -> bool:
-        """Move post from temp to save directory"""
+        """Move post from temp to save directory with improved error handling"""
         if not self.temp_path or not self.save_path:
             logger.error("Paths not configured")
             return False
@@ -246,25 +287,42 @@ class FileManager:
             target_file = os.path.join(target_dir, f"{post_id}{file_ext}")
             target_json = os.path.join(target_dir, f"{post_id}.json")
             
-            # Move media file
-            shutil.move(file_path, target_file)
+            # Move media file with retry logic for locked files
+            if not self._safe_move_file(file_path, target_file):
+                logger.error(f"Failed to move media file for post {post_id}")
+                return False
+            
             logger.debug(f"Moved {file_path} to {target_file}")
 
-            # Move thumbnail if exists (from .thumbnails subdirectory)
+            # Move thumbnail if exists (optional - don't fail if missing)
             video_dir = os.path.dirname(file_path)
             thumb_path = os.path.join(video_dir, '.thumbnails', f"{post_id}_thumb.jpg")
+            
             if os.path.exists(thumb_path):
-                # Create .thumbnails in target directory
                 target_thumb_dir = os.path.join(target_dir, '.thumbnails')
                 os.makedirs(target_thumb_dir, exist_ok=True)
                 target_thumb = os.path.join(target_thumb_dir, f"{post_id}_thumb.jpg")
-                shutil.move(thumb_path, target_thumb)
-                logger.debug(f"Moved thumbnail to {target_thumb}")
+                
+                # Try to move thumbnail, but don't fail the entire operation if it fails
+                if self._safe_move_file(thumb_path, target_thumb):
+                    logger.debug(f"Moved thumbnail to {target_thumb}")
+                else:
+                    logger.warning(f"Failed to move thumbnail for post {post_id}, but continuing...")
+            else:
+                logger.debug(f"No thumbnail found for post {post_id} (will be generated on-demand)")
             
-            # Move JSON
-            shutil.move(json_path, target_json)
+            # Move JSON - use safe move here too
+            if not self._safe_move_file(json_path, target_json):
+                logger.error(f"Failed to move JSON for post {post_id}")
+                # Try to rollback media file
+                try:
+                    shutil.move(target_file, file_path)
+                    logger.info(f"Rolled back media file for post {post_id}")
+                except Exception as rollback_err:
+                    logger.error(f"Failed to rollback media file: {rollback_err}")
+                return False
+            
             logger.debug(f"Moved JSON to {target_json}")
-            
             logger.info(f"Saved post {post_id} to {date_folder}")
             return True
                 
@@ -288,19 +346,33 @@ class FileManager:
             with open(json_path, 'r') as f:
                 post_data = json.load(f)
             
-            # Delete media file
+            # Delete media file with retry logic
             file_path = post_data.get("file_path")
             if file_path and os.path.exists(file_path):
-                os.remove(file_path)
+                # Try multiple times with increasing delay
+                deleted = False
+                for attempt in range(3):
+                    try:
+                        os.remove(file_path)
+                        deleted = True
+                        break
+                    except PermissionError:
+                        if attempt < 2:
+                            logger.warning(f"File locked, retrying... (attempt {attempt + 1}/3)")
+                            time.sleep(0.5 * (attempt + 1))
+                        else:
+                            logger.error(f"Failed to delete file after 3 attempts: {file_path}")
+                            return False
                 
-                # Delete thumbnail if exists
-                try:
-                    thumb_path = os.path.join(self.temp_path, '.thumbnails', f"{post_id}_thumb.jpg")
-                    if os.path.exists(thumb_path):
-                        os.remove(thumb_path)
-                        logger.debug(f"Deleted thumbnail for post {post_id}")
-                except Exception as thumb_error:
-                    logger.warning(f"Failed to delete thumbnail for post {post_id}: {thumb_error}")
+                if deleted:
+                    # Delete thumbnail if exists (best effort)
+                    try:
+                        thumb_path = os.path.join(self.temp_path, '.thumbnails', f"{post_id}_thumb.jpg")
+                        if os.path.exists(thumb_path):
+                            os.remove(thumb_path)
+                            logger.debug(f"Deleted thumbnail for post {post_id}")
+                    except Exception as thumb_error:
+                        logger.warning(f"Failed to delete thumbnail for post {post_id}: {thumb_error}")
             
             # Delete JSON
             os.remove(json_path)
@@ -330,20 +402,35 @@ class FileManager:
             with open(json_path, 'r') as f:
                 post_data = json.load(f)
             
-            # Delete media file
+            # Delete media file with retry logic
             file_ext = post_data.get('file_type', '.jpg')
             file_path = os.path.join(folder_path, f"{post_id}{file_ext}")
+            
             if os.path.exists(file_path):
-                os.remove(file_path)
+                # Try multiple times
+                deleted = False
+                for attempt in range(3):
+                    try:
+                        os.remove(file_path)
+                        deleted = True
+                        break
+                    except PermissionError:
+                        if attempt < 2:
+                            logger.warning(f"File locked, retrying... (attempt {attempt + 1}/3)")
+                            time.sleep(0.5 * (attempt + 1))
+                        else:
+                            logger.error(f"Failed to delete file after 3 attempts: {file_path}")
+                            return False
                 
-                # Delete thumbnail if exists
-                try:
-                    thumb_path = os.path.join(folder_path, '.thumbnails', f"{post_id}_thumb.jpg")
-                    if os.path.exists(thumb_path):
-                        os.remove(thumb_path)
-                        logger.debug(f"Deleted thumbnail for post {post_id}")
-                except Exception as thumb_error:
-                    logger.warning(f"Failed to delete thumbnail for post {post_id}: {thumb_error}")
+                if deleted:
+                    # Delete thumbnail if exists (best effort)
+                    try:
+                        thumb_path = os.path.join(folder_path, '.thumbnails', f"{post_id}_thumb.jpg")
+                        if os.path.exists(thumb_path):
+                            os.remove(thumb_path)
+                            logger.debug(f"Deleted thumbnail for post {post_id}")
+                    except Exception as thumb_error:
+                        logger.warning(f"Failed to delete thumbnail for post {post_id}: {thumb_error}")
             
             # Delete JSON
             os.remove(json_path)

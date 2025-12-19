@@ -81,6 +81,164 @@ async function sortPosts(posts, sortBy, order) {
     return posts.sort(compareFn);
 }
 
+// Add getVideoDuration import
+async function getVideoDuration(postId) {
+    const endpoint = `/api/post/${postId}/duration`;
+    
+    console.log(`[Duration API] GET ${endpoint}`);
+    
+    try {
+        const response = await fetch(endpoint);
+        
+        console.log(`[Duration API] Response status: ${response.status} ${response.statusText}`);
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`[Duration API] Error response body:`, errorText);
+            throw new Error(`HTTP ${response.status}: ${errorText}`);
+        }
+        
+        const data = await response.json();
+        console.log(`[Duration API] Response data:`, data);
+        
+        return data;
+    } catch (error) {
+        console.error(`[Duration API] Request failed:`, error);
+        throw error;
+    }
+}
+
+// Cache for video durations
+const durationCache = new Map();
+
+/**
+ * Fetch video duration on-demand for a post
+ */
+async function fetchVideoDuration(postId) {
+    // Check cache first
+    if (durationCache.has(postId)) {
+        const cached = durationCache.get(postId);
+        console.log(`[Duration] Using cached duration for post ${postId}: ${cached}s`);
+        return cached;
+    }
+    
+    console.log(`[Duration] Fetching from API for post ${postId}...`);
+    
+    try {
+        const result = await getVideoDuration(postId);
+        
+        console.log(`[Duration] API response for post ${postId}:`, result);
+        
+        if (result && result.duration) {
+            durationCache.set(postId, result.duration);
+            console.log(`[Duration] Cached duration for post ${postId}: ${result.duration}s`);
+            return result.duration;
+        } else {
+            console.warn(`[Duration] Invalid response for post ${postId}:`, result);
+            return null;
+        }
+    } catch (error) {
+        console.error(`[Duration] API error for post ${postId}:`, error);
+        return null;
+    }
+}
+
+/**
+ * Update duration badges for visible video posts
+ */
+async function updateVideoDurationBadges() {
+    const startTime = Date.now();
+    const videoPosts = document.querySelectorAll('.gallery-item-media.media-video');
+    
+    console.log(`[Duration] Starting update for ${videoPosts.length} video posts`);
+    
+    // Process in batches to avoid overwhelming the server
+    const BATCH_SIZE = 5;
+    const posts = Array.from(videoPosts);
+    
+    let successCount = 0;
+    let failCount = 0;
+    let skippedCount = 0;
+    
+    for (let i = 0; i < posts.length; i += BATCH_SIZE) {
+        const batch = posts.slice(i, i + BATCH_SIZE);
+        const batchNum = Math.floor(i / BATCH_SIZE) + 1;
+        const totalBatches = Math.ceil(posts.length / BATCH_SIZE);
+        
+        console.log(`[Duration] Processing batch ${batchNum}/${totalBatches} (${batch.length} videos)`);
+        
+        await Promise.all(batch.map(async (container) => {
+            const postId = parseInt(container.dataset.postId);
+            const durationBadge = container.querySelector('.video-duration');
+            
+            // Skip if already has duration (not placeholder)
+            if (durationBadge && durationBadge.textContent && durationBadge.textContent !== '...') {
+                console.log(`[Duration] Skipping post ${postId} - already has duration: ${durationBadge.textContent}`);
+                skippedCount++;
+                return;
+            }
+            
+            console.log(`[Duration] Fetching duration for post ${postId}...`);
+            
+            try {
+                // Fetch duration
+                const duration = await fetchVideoDuration(postId);
+                
+                if (duration && durationBadge) {
+                    const mins = Math.floor(duration / 60);
+                    const secs = Math.floor(duration % 60);
+                    const formatted = `${mins}:${secs.toString().padStart(2, '0')}`;
+                    
+                    durationBadge.textContent = formatted;
+                    durationBadge.style.display = 'block';
+                    durationBadge.classList.remove('loading');
+                    durationBadge.classList.add('loaded');
+                    
+                    console.log(`[Duration] ✅ Post ${postId}: ${formatted} (${duration}s)`);
+                    successCount++;
+                    
+                    // Update the post in state
+                    const post = state.allPosts.find(p => p.id === postId);
+                    if (post) {
+                        post.duration = duration;
+                    }
+                } else {
+                    console.warn(`[Duration] ❌ Post ${postId}: Failed (duration=${duration}, badge=${!!durationBadge})`);
+                    failCount++;
+                    
+                    // Show error indicator
+                    if (durationBadge) {
+                        durationBadge.textContent = '?';
+                        durationBadge.classList.add('error');
+                        durationBadge.title = 'Failed to load duration';
+                    }
+                }
+            } catch (error) {
+                console.error(`[Duration] ❌ Post ${postId}: Exception:`, error);
+                failCount++;
+                
+                // Show error indicator
+                if (durationBadge) {
+                    durationBadge.textContent = '?';
+                    durationBadge.classList.add('error');
+                    durationBadge.title = `Error: ${error.message}`;
+                }
+            }
+        }));
+        
+        // Small delay between batches
+        if (i + BATCH_SIZE < posts.length) {
+            await new Promise(resolve => setTimeout(resolve, 100));
+        }
+    }
+    
+    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(`[Duration] Complete! ${successCount} succeeded, ${failCount} failed, ${skippedCount} skipped in ${elapsed}s`);
+}
+
+// Export the new function
+export { fetchVideoDuration, updateVideoDurationBadges };
+
 function createComparator(sortBy, order) {
     const multiplier = order === SORT_ORDER.ASC ? 1 : -1;
     
@@ -256,6 +414,21 @@ async function loadPosts(updateURL = true) {
                 [URL_PARAMS.ORDER]: order
             });
         }
+        
+        if (pagePosts.length > 0) {
+            // Render first, then fetch durations
+            const useVirtual = useVirtualScroll(pagePosts, grid, sortBy, cleanedQuery);
+            
+            if (!useVirtual) {
+                grid.innerHTML = `<p style="color: #10b981; text-align: center; grid-column: 1/-1; font-size: 18px;">⏳ Rendering ${pagePosts.length} posts...</p>`;
+                await renderPostsOptimized(grid, pagePosts, sortBy, cleanedQuery);
+            }
+            
+            // Fetch durations in background
+            requestAnimationFrame(() => {
+                updateVideoDurationBadges();
+            });
+        }
     } catch (error) {
         const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
         showNotification('Failed to load posts', 'error');
@@ -410,9 +583,18 @@ async function savePostAction(postId) {
 
         searchCache.clear();
     } catch (error) {
-        showNotification('Failed to save post', 'error');
+        // ERROR HANDLING FIX: Don't remove post if operation failed
+        showNotification('Failed to save post - file may be locked. Try again.', 'error');
+        logger.error('Save failed:', error);
+        
+        // Restore post visibility if it was hidden
+        const postEl = document.querySelector(`[data-post-id="${postId}"]`);
+        if (postEl) {
+            postEl.style.opacity = '1';
+        }
     }
 }
+
 
 async function discardPostAction(postId) {
     try {
@@ -438,7 +620,16 @@ async function discardPostAction(postId) {
         searchCache.clear();
         rebuildModalIndexCache();
     } catch (error) {
-        showNotification('Failed to discard post', 'error');
+        // ERROR HANDLING FIX: Don't remove post if operation failed
+        showNotification('Failed to discard post - file may be locked. Try again.', 'error');
+        logger.error('Discard failed:', error);
+        
+        // Restore post visibility
+        const postEl = document.querySelector(`[data-post-id="${postId}"]`);
+        if (postEl) {
+            postEl.style.opacity = '1';
+            postEl.style.transform = 'scale(1)';
+        }
     }
 }
 
@@ -467,7 +658,16 @@ async function deletePostAction(postId, dateFolder) {
         searchCache.clear();
         rebuildModalIndexCache();
     } catch (error) {
-        showNotification('Failed to delete post', 'error');
+        // ERROR HANDLING FIX: Don't remove post if operation failed
+        showNotification('Failed to delete post - file may be locked. Try again.', 'error');
+        logger.error('Delete failed:', error);
+        
+        // Restore post visibility
+        const postEl = document.querySelector(`[data-post-id="${postId}"]`);
+        if (postEl) {
+            postEl.style.opacity = '1';
+            postEl.style.transform = 'scale(1)';
+        }
     }
 }
 

@@ -22,6 +22,7 @@ def create_routes(app, config, services):
     scraper_service = services['scraper']
     autocomplete_service = services['autocomplete']
     file_manager = services['file_manager']
+    queue = services['queue']
     
     # Authentication decorator
     def login_required(f):
@@ -68,6 +69,88 @@ def create_routes(app, config, services):
     @login_required
     def get_status():
         return jsonify(scraper_service.get_status())
+    
+    
+    # NEW: Video processing diagnostics endpoint
+    @app.route("/api/diagnostics/video", methods=["GET"])
+    @login_required
+    def video_diagnostics():
+        """Get video processing diagnostic information"""
+        from video_processor import test_video_processing
+        
+        info = test_video_processing()
+        
+        return jsonify({
+            "ffmpeg_available": info['ffmpeg_available'],
+            "ffmpeg_path": info.get('ffmpeg_path'),
+            "ffmpeg_version": info.get('ffmpeg_version'),
+            "ffprobe_available": info['ffprobe_available'],
+            "ffprobe_path": info.get('ffprobe_path'),
+            "ffprobe_version": info.get('ffprobe_version'),
+            "system": info['system'],
+            "errors": info['errors'],
+            "recommendations": _get_video_recommendations(info)
+        })
+    
+    def _get_video_recommendations(info):
+        """Generate recommendations based on diagnostic info"""
+        recommendations = []
+        
+        if not info['ffmpeg_available']:
+            recommendations.append({
+                "severity": "error",
+                "message": "ffmpeg not found in PATH",
+                "solution": "Install ffmpeg and add it to your system PATH. Download from https://ffmpeg.org/download.html"
+            })
+        
+        if not info['ffprobe_available']:
+            recommendations.append({
+                "severity": "warning",
+                "message": "ffprobe not found in PATH",
+                "solution": "ffprobe usually comes with ffmpeg. Reinstall ffmpeg or add ffprobe to PATH separately."
+            })
+        
+        if info['errors']:
+            recommendations.append({
+                "severity": "error",
+                "message": f"Found {len(info['errors'])} configuration errors",
+                "solution": "Check the errors list and PATH configuration"
+            })
+        
+        if not recommendations:
+            recommendations.append({
+                "severity": "success",
+                "message": "Video processing is properly configured",
+                "solution": None
+            })
+        
+        return recommendations
+    
+    # NEW: File operations queue status
+    @app.route("/api/queue/status", methods=["GET"])
+    @login_required
+    def queue_status():
+        """Get file operations queue status"""
+        status = queue.get_queue_status()
+        return jsonify({
+            "queue_size": len(status),
+            "operations": status,
+            "running": queue.running
+        })
+    
+    # NEW: Clear queue (for testing/admin)
+    @app.route("/api/queue/clear", methods=["POST"])
+    @login_required
+    def queue_clear():
+        """Clear all operations from queue"""
+        with queue.lock:
+            queue_size = len(queue.queue)
+            queue.queue.clear()
+        
+        return jsonify({
+            "success": True,
+            "cleared": queue_size
+        })
     
     # Config routes
     @app.route("/api/config", methods=["GET", "POST"])
@@ -245,23 +328,54 @@ def create_routes(app, config, services):
     @login_required
     def save_post(post_id):
         try:
-            post_service.save_post(post_id)
-            return jsonify({"success": True})
+            success = post_service.save_post(post_id)
+            if success:
+                return jsonify({"success": True})
+            else:
+                # Add to queue for retry
+                from file_operations_queue import OperationType
+                queue.add_operation(post_id, OperationType.SAVE)
+                return jsonify({
+                    "success": False,
+                    "error": "File locked - added to retry queue",
+                    "queued": True
+                }), 202  # 202 Accepted
         except ValidationError as e:
             return jsonify({"error": str(e)}), 400
         except StorageError as e:
-            return jsonify({"error": str(e)}), 500
+            # Add to queue for retry
+            from file_operations_queue import OperationType
+            queue.add_operation(post_id, OperationType.SAVE)
+            return jsonify({
+                "error": str(e),
+                "queued": True
+            }), 202
     
     @app.route("/api/discard/<int:post_id>", methods=["POST"])
     @login_required
     def discard_post(post_id):
         try:
-            post_service.discard_post(post_id)
-            return jsonify({"success": True})
+            success = post_service.discard_post(post_id)
+            if success:
+                return jsonify({"success": True})
+            else:
+                # Add to queue for retry
+                from file_operations_queue import OperationType
+                queue.add_operation(post_id, OperationType.DISCARD)
+                return jsonify({
+                    "success": False,
+                    "error": "File locked - added to retry queue",
+                    "queued": True
+                }), 202
         except ValidationError as e:
             return jsonify({"error": str(e)}), 400
         except StorageError as e:
-            return jsonify({"error": str(e)}), 500
+            from file_operations_queue import OperationType
+            queue.add_operation(post_id, OperationType.DISCARD)
+            return jsonify({
+                "error": str(e),
+                "queued": True
+            }), 202
     
     @app.route("/api/delete/<int:post_id>", methods=["POST"])
     @login_required
@@ -273,12 +387,29 @@ def create_routes(app, config, services):
             if not date_folder:
                 return jsonify({"error": "date_folder required"}), 400
             
-            post_service.delete_saved_post(post_id, date_folder)
-            return jsonify({"success": True})
+            success = post_service.delete_saved_post(post_id, date_folder)
+            if success:
+                return jsonify({"success": True})
+            else:
+                # Add to queue for retry
+                from file_operations_queue import OperationType
+                queue.add_operation(post_id, OperationType.DELETE, date_folder)
+                return jsonify({
+                    "success": False,
+                    "error": "File locked - added to retry queue",
+                    "queued": True
+                }), 202
         except ValidationError as e:
             return jsonify({"error": str(e)}), 400
         except StorageError as e:
-            return jsonify({"error": str(e)}), 500
+            from file_operations_queue import OperationType
+            queue.add_operation(post_id, OperationType.DELETE, date_folder)
+            return jsonify({
+                "error": str(e),
+                "queued": True
+            }), 202
+    
+    logger.info("Routes registered successfully")
     
     @app.route("/api/post/<int:post_id>/size")
     @login_required
@@ -354,6 +485,59 @@ def create_routes(app, config, services):
                 
         except Exception as e:
             logger.error(f"Thumbnail generation error: {e}", exc_info=True)
+            return jsonify({"error": str(e)}), 500
+
+    @app.route("/api/post/<int:post_id>/duration", methods=["GET"])
+    @login_required
+    def get_video_duration(post_id):
+        """Get video duration for a post on-demand"""
+        try:
+            post_id = validate_post_id(post_id)
+            
+            # Find the video file
+            from video_processor import get_video_processor
+            processor = get_video_processor()
+            
+            # Check temp directory
+            video_path = None
+            
+            if file_manager.temp_path:
+                for filename in os.listdir(file_manager.temp_path):
+                    if filename.startswith(str(post_id)) and filename.endswith(('.mp4', '.webm')):
+                        video_path = os.path.join(file_manager.temp_path, filename)
+                        break
+            
+            # Check save directory if not found
+            if not video_path and file_manager.save_path:
+                for date_folder in os.listdir(file_manager.save_path):
+                    folder_path = os.path.join(file_manager.save_path, date_folder)
+                    if not os.path.isdir(folder_path):
+                        continue
+                    for filename in os.listdir(folder_path):
+                        if filename.startswith(str(post_id)) and filename.endswith(('.mp4', '.webm')):
+                            video_path = os.path.join(folder_path, filename)
+                            break
+                    if video_path:
+                        break
+            
+            if not video_path:
+                return jsonify({"error": "Video not found"}), 404
+            
+            # Get duration
+            duration = processor.get_video_duration(video_path)
+            
+            if duration is not None:
+                logger.info(f"Retrieved duration for post {post_id}: {duration}s")
+                return jsonify({
+                    "success": True,
+                    "duration": duration,
+                    "post_id": post_id
+                })
+            else:
+                return jsonify({"error": "Failed to get video duration"}), 500
+                
+        except Exception as e:
+            logger.error(f"Duration retrieval error: {e}", exc_info=True)
             return jsonify({"error": str(e)}), 500
 
     # Autocomplete route

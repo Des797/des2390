@@ -257,13 +257,18 @@ function renderMedia(post) {
     const mediaUrl = getMediaUrl(post);
     const isVideo = isVideoFile(post.file_type);
     const isGif = isGifFile(post.file_type);
-    const duration = post.duration ? formatVideoDuration(post.duration) : '';
-
+    
+    // Show placeholder initially, will be filled by fetchVideoDuration
+    const duration = post.duration ? formatVideoDuration(post.duration) : null;
+    
     let mediaClass = '';
     if (isVideo) mediaClass = 'media-video';
     else if (isGif) mediaClass = 'media-gif';
 
-    const durationBadge = duration ? `<div class="video-duration">${duration}</div>` : '';
+    // Duration badge: show placeholder "..." initially, filled in after load
+    const durationBadge = isVideo 
+        ? `<div class="video-duration" data-post-id="${post.id}">${duration || '...'}</div>` 
+        : '';
 
     if (isVideo) {
         let thumbUrl = '';

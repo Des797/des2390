@@ -14,6 +14,7 @@ from services import (
     SearchService, ScraperService, AutocompleteService
 )
 from routes import create_routes
+from file_operations_queue import get_file_operations_queue
 
 # Get configuration
 app_config = get_config()
@@ -49,6 +50,7 @@ db = Database(app_config.DATABASE_PATH)
 api_client = Rule34APIClient()
 file_manager = FileManager()
 scraper = Scraper(api_client, file_manager, db, es)
+file_operations_queue = get_file_operations_queue(file_manager, db)
 
 # Initialize services
 services = {
@@ -60,6 +62,8 @@ services = {
     'autocomplete': AutocompleteService(api_client),
     'file_manager': file_manager  # For route access
 }
+
+services['queue'] = file_operations_queue
 
 # Load startup configuration
 def load_startup_config():
@@ -74,6 +78,7 @@ def load_startup_config():
     )
     logger.info("Startup configuration loaded")
 
+
 # Register routes
 create_routes(app, app_config, services)
 
@@ -83,4 +88,15 @@ if __name__ == "__main__":
     # Print configuration
     app_config.print_info()
     
-    app.run(debug=app_config.DEBUG, host=app_config.HOST, port=app_config.PORT)
+    # Print queue status
+    print("\n" + "="*60)
+    print("File Operations Queue: ACTIVE")
+    print("Background retry processor running for locked files")
+    print("="*60 + "\n")
+    
+    try:
+        app.run(debug=app_config.DEBUG, host=app_config.HOST, port=app_config.PORT)
+    finally:
+        # Cleanup
+        file_operations_queue.stop()
+        print("Shutting down file operations queue...")

@@ -221,7 +221,7 @@ function parseNumericFilter(field, value, isNeg) {
     }
     
     // Parse as number
-    const numValue = parseInt(numPart);
+    const numValue = parseFloat(numPart);
     if (isNaN(numValue)) {
         throw new Error(`Invalid number in ${field} filter: ${numPart}`);
     }
