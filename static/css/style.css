@@ -493,14 +493,50 @@ button.greyed-out {
     position: relative;
     background: #000;
 }
-
-.gallery-item-media.media-video video {
-    opacity: 0;
-    transition: opacity 0.3s;
+.gallery-item-media .video-poster {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    pointer-events: none;
+    z-index: 1;
+    opacity: 1;
+    transition: opacity 0.2s ease;
 }
 
-.gallery-item-media.media-video video[data-loaded] {
-    opacity: 1;
+.gallery-item-media.media-video video {
+    position: relative;
+    z-index: 0;
+}
+
+/* When video is playing, ensure poster fades out */
+.gallery-item-media.media-video video[data-playing] ~ .video-poster {
+    opacity: 0;
+}
+
+/* Force video poster to display */
+.gallery-item-media video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    cursor: pointer;
+    background: #000;
+    display: block;
+}
+
+/* Ensure poster shows before video loads */
+.gallery-item-media.media-video video:not([data-loaded]) {
+    background-image: attr(poster);
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+/* When video is playing, hide poster */
+.gallery-item-media.media-video video[data-playing] {
+    object-fit: contain;
 }
 
 .gallery-item-media .video-duration {
@@ -531,6 +567,21 @@ button.greyed-out {
     display: block;
 }
 
+.gallery-item-media video:not([data-playing]) {
+    background-color: #000;
+}
+
+.gallery-item-media.media-video {
+    position: relative;
+    background: #000;
+}
+
+.gallery-item-media.media-video video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
 .gallery-item-media .video-overlay {
     position: absolute;
     top: 50%;
@@ -545,6 +596,7 @@ button.greyed-out {
     justify-content: center;
     pointer-events: none;
     z-index: 2;
+    transition: opacity 0.2s ease;
 }
 
 .gallery-item-media .video-overlay::after {
@@ -552,6 +604,10 @@ button.greyed-out {
     font-size: 20px;
     color: white;
     margin-left: 3px;
+}
+
+.gallery-item-media.media-video video[data-playing] ~ .video-overlay {
+    opacity: 0;
 }
 
 .gallery-item-media .video-duration {

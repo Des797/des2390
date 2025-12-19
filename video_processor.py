@@ -29,7 +29,19 @@ class VideoProcessor:
             return False
     
     def generate_thumbnail(self, video_path: str, output_path: Optional[str] = None, 
-                          timestamp: str = "00:00:01", size: str = "320x180") -> Optional[str]:
+                          timestamp: str = "00:00:01", size: str = "-1:-1") -> Optional[str]:
+        """
+        Generate thumbnail from video at specified timestamp
+        
+        Args:
+            video_path: Path to video file
+            output_path: Output path for thumbnail (auto-generated if None)
+            timestamp: Timestamp to extract frame (format: HH:MM:SS)
+            size: Thumbnail size (WxH or W:-1 for auto height)
+        
+        Returns:
+            Path to generated thumbnail or None if failed
+        """
         if not self.ffmpeg_available:
             return None
         
@@ -53,14 +65,15 @@ class VideoProcessor:
             return output_path
         
         try:
-            # ffmpeg command to extract frame
+            # ffmpeg command to extract frame with proper aspect ratio
+            # Using -1 for height maintains aspect ratio
             cmd = [
                 'ffmpeg',
                 '-ss', timestamp,           # Seek to timestamp
                 '-i', video_path,            # Input file
                 '-vframes', '1',             # Extract 1 frame
-                '-vf', f'scale={size}',      # Scale to size
-                '-q:v', '2',                 # Quality (1-31, lower = better)
+                '-vf', f'scale={size}',      # Scale with aspect ratio preserved
+                '-q:v', '1',                 # Quality (1-31, lower = better)
                 '-y',                        # Overwrite output
                 output_path
             ]

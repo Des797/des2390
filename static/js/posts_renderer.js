@@ -41,7 +41,7 @@ function formatVideoDuration(seconds) {
 }
 
 /**
- * Setup video hover-to-play
+ * Setup video hover-to-play (FIXED - proper autoplay)
  */
 function setupVideoPreviewListeners() {
     document.querySelectorAll('.gallery-item-media.media-video').forEach(container => {
@@ -50,52 +50,104 @@ function setupVideoPreviewListeners() {
         
         video.muted = true;
         video.playsInline = true;
-        video.preload = 'none';
         video.loop = true;
         
         let isHovering = false;
         let playTimeout = null;
         let hasLoadedOnce = false;
         
-        // Generate thumbnail URL
-        const postId = video.dataset.postId;
-        const videoSrc = video.src;
-        const videoPath = new URL(videoSrc).pathname;
-        const pathParts = videoPath.split('/');
-        const filename = pathParts.pop();
-        const thumbFilename = filename.replace(/\.(mp4|webm)$/i, '_thumb.jpg');
-        pathParts.push('.thumbnails', thumbFilename);
-        const thumbUrl = pathParts.join('/');
-        
-        // Set poster if thumbnail exists
-        if (!video.poster) {
+        // Ensure poster is set from data attribute
+        const thumbUrl = video.dataset.thumbUrl;
+        if (thumbUrl && !video.poster) {
             video.poster = thumbUrl;
+        }
+        
+        // Force poster to show by setting attribute directly
+        if (thumbUrl) {
+            video.setAttribute('poster', thumbUrl);
         }
         
         container.addEventListener('mouseenter', () => {
             isHovering = true;
+            
             playTimeout = setTimeout(() => {
-                if (isHovering) {
+                if (isHovering && video) {
+                    // Preload if needed
                     if (!hasLoadedOnce) {
                         video.preload = 'auto';
-                        video.load();
                         hasLoadedOnce = true;
                     }
-                    video.play().catch(err => {
-                        console.warn('Video play failed:', err);
-                    });
+                    
+                    // Ensure video is ready to play
+                    const playPromise = video.play();
+                    
+                    if (playPromise !== undefined) {
+                        playPromise
+                            .then(() => {
+                                // Video started playing
+                                video.setAttribute('data-playing', 'true');
+                                
+                                // Hide poster image overlay if it exists
+                                const posterImg = container.querySelector('.video-poster');
+                                if (posterImg) {
+                                    posterImg.style.opacity = '0';
+                                    posterImg.style.transition = 'opacity 0.2s';
+                                }
+                            })
+                            .catch(err => {
+                                // Autoplay was prevented or error occurred
+                                console.warn('Video play failed for post', video.dataset.postId, ':', err);
+                                video.removeAttribute('data-playing');
+                                
+                                // Show poster again if it was hidden
+                                const posterImg = container.querySelector('.video-poster');
+                                if (posterImg) {
+                                    posterImg.style.opacity = '1';
+                                }
+                            });
+                    }
                 }
-            }, 200);
+            }, 200); // 200ms delay before starting playback
         });
         
         container.addEventListener('mouseleave', () => {
             isHovering = false;
+            
             if (playTimeout) {
                 clearTimeout(playTimeout);
                 playTimeout = null;
             }
-            video.pause();
-            video.currentTime = 0;
+            
+            if (video) {
+                video.pause();
+                video.currentTime = 0;
+                video.removeAttribute('data-playing');
+                
+                // Show poster image overlay again
+                const posterImg = container.querySelector('.video-poster');
+                if (posterImg) {
+                    posterImg.style.opacity = '1';
+                    posterImg.style.transition = 'opacity 0.2s';
+                }
+                
+                // Reload to reset to poster frame
+                video.load();
+            }
+        });
+        
+        // Listen for play/pause events to manage state
+        video.addEventListener('play', () => {
+            video.setAttribute('data-playing', 'true');
+        });
+        
+        video.addEventListener('pause', () => {
+            video.removeAttribute('data-playing');
+        });
+        
+        // Handle errors
+        video.addEventListener('error', (e) => {
+            console.error('Video error for post', video.dataset.postId, ':', e);
+            video.removeAttribute('data-playing');
         });
     });
     
@@ -106,7 +158,7 @@ function setupVideoPreviewListeners() {
 window.setupVideoPreviewListeners = setupVideoPreviewListeners;
 
 /**
- * Generate missing video thumbnails on-demand
+ * Generate missing video thumbnails on-demand with real-time updates
  */
 async function generateMissingThumbnails() {
     const videos = document.querySelectorAll('.media-video video[data-thumb-url]');
@@ -117,13 +169,27 @@ async function generateMissingThumbnails() {
         
         // Check if thumbnail loads
         const img = new Image();
+        
         img.onload = () => {
-            // Thumbnail exists, do nothing
+            // Thumbnail exists, ensure it's set
             video.poster = thumbUrl;
+            video.setAttribute('poster', thumbUrl);
+            video.setAttribute('data-thumb-loaded', 'true');
+            
+            // Also update the poster image if it exists
+            const container = video.closest('.gallery-item-media');
+            if (container) {
+                const posterImg = container.querySelector('.video-poster');
+                if (posterImg) {
+                    posterImg.src = thumbUrl;
+                }
+            }
         };
         
         img.onerror = async () => {
             // Thumbnail missing, request generation
+            console.log(`Thumbnail missing for post ${postId}, requesting generation...`);
+            
             try {
                 const response = await fetch(`/api/post/${postId}/generate-thumbnail`, {
                     method: 'POST'
@@ -132,18 +198,39 @@ async function generateMissingThumbnails() {
                 if (response.ok) {
                     const result = await response.json();
                     if (result.thumbnail_url) {
-                        video.poster = result.thumbnail_url;
-                        logger.debug(`Generated thumbnail for post ${postId}`);
+                        // Add cache buster to force reload
+                        const newThumbUrl = result.thumbnail_url + '?t=' + Date.now();
+                        
+                        // Update video poster
+                        video.poster = newThumbUrl;
+                        video.setAttribute('poster', newThumbUrl);
+                        video.setAttribute('data-thumb-loaded', 'true');
+                        
+                        // Update poster image overlay if it exists
+                        const container = video.closest('.gallery-item-media');
+                        if (container) {
+                            const posterImg = container.querySelector('.video-poster');
+                            if (posterImg) {
+                                posterImg.src = newThumbUrl;
+                                posterImg.style.display = 'block'; // Ensure it's visible
+                            }
+                        }
+                        
+                        // Force video to reload with new poster
+                        video.load();
+                        
+                        console.log(`Generated and updated thumbnail for post ${postId}`);
                     }
+                } else {
+                    console.warn(`Thumbnail generation failed for post ${postId}: ${response.status}`);
                 }
             } catch (error) {
                 console.warn(`Failed to generate thumbnail for post ${postId}:`, error);
-                // Fallback: use first frame as poster
-                video.poster = '';
             }
         };
         
-        img.src = thumbUrl;
+        // Add cache buster to check if thumbnail really exists
+        img.src = thumbUrl + '?check=' + Date.now();
     });
 }
 
@@ -179,21 +266,24 @@ function renderMedia(post) {
     const durationBadge = duration ? `<div class="video-duration">${duration}</div>` : '';
 
     if (isVideo) {
-        // Generate thumbnail URL with .thumbnails subdirectory
-        const mediaUrlParts = mediaUrl.split('/');
-        const filename = mediaUrlParts.pop();
-        const thumbFilename = filename.replace(/\.(mp4|webm)$/i, '_thumb.jpg');
-        const thumbUrl = [...mediaUrlParts, '.thumbnails', thumbFilename].join('/');
+        let thumbUrl = '';
+        if (post.status === POST_STATUS.PENDING) {
+            thumbUrl = `/temp/.thumbnails/${post.id}_thumb.jpg`;
+        } else {
+            thumbUrl = `/saved/${post.date_folder}/.thumbnails/${post.id}_thumb.jpg`;
+        }
         
         return `
             <div class="${mediaClass}" data-post-id="${post.id}">
+                <img class="video-poster" src="${thumbUrl}" alt="Video thumbnail" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; pointer-events: none; z-index: 1;">
                 <video src="${mediaUrl}" 
                        poster="${thumbUrl}"
                        muted 
                        loop 
                        preload="none"
                        data-post-id="${post.id}"
-                       data-thumb-url="${thumbUrl}">
+                       data-thumb-url="${thumbUrl}"
+                       style="position: relative; z-index: 0;">
                 </video>
                 <div class="video-overlay"></div>
                 ${durationBadge}
@@ -480,6 +570,33 @@ function renderExpandedTags(tags) {
         return `<span class="${CSS_CLASSES.TAG}" data-tag="${t}" title="${tagWithCount}">${t}</span>`;
     }).join('');
 }
+
+/**
+ * Debug function to check video poster status
+ */
+function debugVideoPosterStatus() {
+    const videos = document.querySelectorAll('video');
+    console.log(`Found ${videos.length} video elements`);
+    
+    videos.forEach((video, index) => {
+        console.log(`Video ${index}:`, {
+            postId: video.dataset.postId,
+            poster: video.poster,
+            posterAttr: video.getAttribute('poster'),
+            thumbUrl: video.dataset.thumbUrl,
+            hasLoaded: video.getAttribute('data-thumb-loaded'),
+            preload: video.preload,
+            readyState: video.readyState
+        });
+    });
+}
+
+// Call after a delay to check status
+setTimeout(debugVideoPosterStatus, 2000);
+
+window.debugVideoPosterStatus = debugVideoPosterStatus;
+
+window.debugVideoPosterStatus = debugVideoPosterStatus;
 
 export {
     renderPost,

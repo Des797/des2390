@@ -302,10 +302,14 @@ def create_routes(app, config, services):
             
             # Check temp directory
             video_path = None
-            for filename in os.listdir(file_manager.temp_path or '.'):
-                if filename.startswith(str(post_id)) and filename.endswith(('.mp4', '.webm')):
-                    video_path = os.path.join(file_manager.temp_path, filename)
-                    break
+            video_location = None  # Track where we found it
+            
+            if file_manager.temp_path:
+                for filename in os.listdir(file_manager.temp_path):
+                    if filename.startswith(str(post_id)) and filename.endswith(('.mp4', '.webm')):
+                        video_path = os.path.join(file_manager.temp_path, filename)
+                        video_location = 'temp'
+                        break
             
             # Check save directory if not found
             if not video_path and file_manager.save_path:
@@ -316,6 +320,7 @@ def create_routes(app, config, services):
                     for filename in os.listdir(folder_path):
                         if filename.startswith(str(post_id)) and filename.endswith(('.mp4', '.webm')):
                             video_path = os.path.join(folder_path, filename)
+                            video_location = f'saved/{date_folder}'
                             break
                     if video_path:
                         break
@@ -328,18 +333,21 @@ def create_routes(app, config, services):
             
             if thumb_path:
                 # Convert to URL path
-                if file_manager.temp_path and thumb_path.startswith(file_manager.temp_path):
+                if video_location == 'temp':
+                    # Extract relative path from temp_path
                     relative_path = thumb_path.replace(file_manager.temp_path, '').lstrip(os.sep)
                     thumbnail_url = f"/temp/{relative_path.replace(os.sep, '/')}"
-                elif file_manager.save_path and thumb_path.startswith(file_manager.save_path):
+                else:
+                    # Extract relative path from save_path
                     relative_path = thumb_path.replace(file_manager.save_path, '').lstrip(os.sep)
                     thumbnail_url = f"/saved/{relative_path.replace(os.sep, '/')}"
-                else:
-                    thumbnail_url = None
+                
+                logger.info(f"Generated thumbnail for post {post_id}: {thumbnail_url}")
                 
                 return jsonify({
                     "success": True,
-                    "thumbnail_url": thumbnail_url
+                    "thumbnail_url": thumbnail_url,
+                    "post_id": post_id
                 })
             else:
                 return jsonify({"error": "Thumbnail generation failed"}), 500
@@ -360,12 +368,14 @@ def create_routes(app, config, services):
     @app.route("/temp/<path:filename>")
     @login_required
     def serve_temp(filename):
+        logger.debug(f"Serving temp file: {filename}")
         return send_from_directory(file_manager.temp_path, filename)
-    
+
     @app.route("/saved/<date_folder>/<path:filename>")
     @login_required
     def serve_saved(date_folder, filename):
         folder_path = os.path.join(file_manager.save_path, date_folder)
+        logger.debug(f"Serving saved file: {date_folder}/{filename}")
         return send_from_directory(folder_path, filename)
     
     logger.info("Routes registered successfully")
