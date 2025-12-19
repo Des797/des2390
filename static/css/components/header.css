@@ -1,0 +1,17 @@
+.header {
+    background: var(--bg-panel);
+    border-radius: 12px;
+    padding: 25px;
+    margin-bottom: 20px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    border: 1px solid var(--border-main);
+}
+
+.header h1 {
+    color: var(--accent);
+    margin-bottom: 20px;
+    font-size: 28px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}

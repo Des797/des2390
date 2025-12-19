@@ -33,7 +33,37 @@ rule34_scraper/
 │   └── login.html             # Login page
 └── static/
     ├── css/
-    │   └── style.css          # All styles
+    │   ├── style.css           # CSS entry point (imports all modules)
+    │   ├── base/               # Global foundation styles
+    │   │   ├── reset.css       # CSS reset
+    │   │   ├── variables.css   # Global CSS variables
+    │   │   ├── typography.css  # Body, fonts, text defaults
+    │   │   └── layout.css      # Global layout helpers
+    │   ├── components/         # Reusable UI components
+    │   │   ├── header.css      # Header and page title styles
+    │   │   ├── nav-tabs.css    # Navigation tabs
+    │   │   ├── forms.css       # Inputs, labels, selects, textareas
+    │   │   ├── buttons.css     # Button base + variants
+    │   │   ├── alerts.css      # Alert banners (info/warn/success)
+    │   │   ├── notifications.css # Toast/notification popups
+    │   │   ├── pagination.css # Pagination controls
+    │   │   ├── search-controls.css # Search bar, dropdown, autocomplete UI
+    │   │   ├── stats.css       # Statistics cards & counters
+    │   │   └── scrollbar.css  # Scrollbar styling
+    │   ├── gallery/
+    │   │   ├── gallery-core.css    # Gallery container & layout
+    │   │   ├── gallery-controls.css # Gallery header controls, filters, sort UI
+    │   │   ├── gallery-media.css  # Image/video/media handling
+    │   │   ├── gallery-items.css  # Item cards, metadata, actions
+    │   │   └── gallery-bulk.css   # Bulk selection & progress UI
+    │   ├── modal/              # Modal / lightbox UI
+    │   │   └── modal.css       # Modal layout, navigation, media
+    │   ├── features/
+    │   │   ├── offline.css     # Offline / connection state UI
+    │   │   ├── blacklist.css   # Blacklist editor & tags
+    │   │   └── tag-history.css # Tag history diff views
+    │   └── responsive/
+    │       └── mobile.css      # Mobile & small-screen overrides
     └── js/
         ├── main.js            # Main entry point
         ├── state.js           # State management & browser history

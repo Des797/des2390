@@ -156,10 +156,21 @@ class VideoProcessor:
     
     def generate_thumbnail_at_percentage(self, video_path: str, percentage: float = 10.0,
                                         output_path: Optional[str] = None) -> Optional[str]:
+        """
+        Generate thumbnail at a percentage point in the video
+        
+        Args:
+            video_path: Path to video file
+            percentage: Percentage of video duration (0-100)
+            output_path: Output path (auto-generated if None)
+        
+        Returns:
+            Path to generated thumbnail or None if failed
+        """
         duration = self.get_video_duration(video_path)
         if duration is None:
             # Fallback to 1 second if duration can't be determined
-            return self.generate_thumbnail(video_path, output_path, "00:00:01")
+            return self.generate_thumbnail(video_path, output_path, "00:00:01", size="-1:-1")
         
         # Calculate timestamp
         target_seconds = duration * (percentage / 100.0)
@@ -169,7 +180,7 @@ class VideoProcessor:
         
         timestamp = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
         
-        return self.generate_thumbnail(video_path, output_path, timestamp)
+        return self.generate_thumbnail(video_path, output_path, timestamp, size="-1:-1")
         
     def get_thumbnail_path(self, video_path: str) -> str:
         video_dir = os.path.dirname(video_path)

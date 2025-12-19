@@ -1,0 +1,68 @@
+@media (max-width: 768px) {
+    body {
+        padding: 10px;
+    }
+
+    .header {
+        padding: 15px;
+    }
+
+    .header h1 {
+        font-size: 22px;
+    }
+
+    .nav-tabs {
+        overflow-x: auto;
+        flex-wrap: nowrap;
+    }
+
+    .nav-tab {
+        white-space: nowrap;
+        font-size: 12px;
+        padding: 8px 12px;
+    }
+
+    .config-section {
+        grid-template-columns: 1fr;
+    }
+
+    .search-controls {
+        flex-direction: column;
+    }
+
+    .gallery-grid {
+        grid-template-columns: repeat(auto-fill, 150px);
+    }
+
+    .modal-nav {
+        width: 40px;
+        height: 40px;
+        font-size: 18px;
+    }
+
+    .modal-nav.prev {
+        left: 10px;
+    }
+
+    .modal-nav.next {
+        right: 10px;
+    }
+
+    .bulk-actions {
+        flex-direction: column;
+    }
+
+    .bulk-actions button {
+        width: 100%;
+    }
+
+    .gallery-controls {
+        flex-direction: column;
+        width: 100%;
+    }
+
+    .gallery-controls select,
+    .gallery-controls input {
+        width: 100%;
+    }
+}

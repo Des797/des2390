@@ -1,0 +1,68 @@
+.gallery-controls {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.gallery-controls select,
+.gallery-controls input[type="text"] {
+    padding: 8px;
+    background: var(--bg-main);
+    border: 2px solid var(--border-main);
+    border-radius: 6px;
+    color: var(--txt-main);
+    font-size: 13px;
+}
+
+.gallery-controls input[type="number"] {
+    padding: 8px;
+    background: var(--bg-main);
+    border: 2px solid var(--border-main);
+    border-radius: 6px;
+    color: var(--txt-main);
+    font-size: 13px;
+    width: 80px;
+}
+
+.sort-order-btn {
+    padding: 8px 12px;
+    background: var(--bg-main);
+    border: 2px solid var(--border-main);
+    border-radius: 6px;
+    color: var(--txt-main);
+    font-size: 18px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 40px;
+}
+
+.sort-order-btn:hover {
+    background: var(--border-main);
+    border-color: var(--accent);
+}
+
+.filter-badge {
+    background: var(--accent);
+    color: white;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.filter-badge span {
+    cursor: pointer;
+    font-weight: bold;
+}
+
+.total-results {
+    color: var(--txt-muted);
+    font-size: 13px;
+    font-weight: 600;
+}

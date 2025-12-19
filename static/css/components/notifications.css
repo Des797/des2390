@@ -1,0 +1,26 @@
+.notification {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background: var(--accent);
+    color: white;
+    padding: 12px 20px;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+    display: none;
+    align-items: center;
+    gap: 10px;
+    z-index: 999;
+}
+
+.notification.show {
+    display: flex;
+}
+
+.notification.error {
+    background: var(--danger);
+}
+
+.notification.warning {
+    background: var(--warning);
+}

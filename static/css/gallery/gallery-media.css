@@ -1,0 +1,180 @@
+.gallery-item-media {
+    width: 100%;
+    position: relative;
+    background: #000;
+    overflow: hidden;
+}
+
+/* Thumbnail outlines for different types */
+.gallery-item-media.media-deleted {
+    border: 3px solid var(--danger);
+}
+
+.gallery-item-media.media-video {
+    position: relative;
+    background: #000;
+}
+.gallery-item-media .video-poster {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    pointer-events: none;
+    z-index: 1;
+    opacity: 1;
+    transition: opacity 0.2s ease;
+}
+
+.gallery-item-media.media-video video {
+    position: relative;
+    z-index: 0;
+}
+
+/* When video is playing, ensure poster fades out */
+.gallery-item-media.media-video video[data-playing] ~ .video-poster {
+    opacity: 0;
+}
+
+/* Force video poster to display */
+.gallery-item-media video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    cursor: pointer;
+    background: #000;
+    display: block;
+}
+
+/* Ensure poster shows before video loads */
+.gallery-item-media.media-video video:not([data-loaded]) {
+    background-image: attr(poster);
+    background-size: contain;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+
+/* When video is playing, hide poster */
+.gallery-item-media.media-video video[data-playing] {
+    object-fit: contain;
+}
+
+.gallery-item-media .video-duration {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    z-index: 2;
+    pointer-events: none;
+}
+
+.gallery-item-media.media-gif {
+    border: 3px solid #eab308;
+}
+
+.gallery-item-media img,
+.gallery-item-media video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    cursor: pointer;
+    background: #000;
+    display: block;
+}
+
+.gallery-item-media video:not([data-playing]) {
+    background-color: #000;
+}
+
+.gallery-item-media.media-video {
+    position: relative;
+    background: #000;
+}
+
+.gallery-item-media.media-video video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.gallery-item-media .video-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 50px;
+    height: 50px;
+    background: rgba(16, 185, 129, 0.8);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+    z-index: 2;
+    transition: opacity 0.2s ease;
+}
+
+.gallery-item-media .video-overlay::after {
+    content: '▶';
+    font-size: 20px;
+    color: white;
+    margin-left: 3px;
+}
+
+.gallery-item-media.media-video video[data-playing] ~ .video-overlay {
+    opacity: 0;
+}
+
+.gallery-item-media .video-duration {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    background: rgba(0, 0, 0, 0.8);
+    color: white;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    z-index: 2;
+}
+
+.gallery-item-media video.preview-playing {
+    display: block;
+}
+
+.gallery-item-media img.preview-hidden {
+    display: none;
+}
+
+.gallery-item-media .select-checkbox {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    width: 22px;
+    height: 22px;
+    background: rgba(0,0,0,0.7);
+    border: 2px solid var(--accent);
+    border-radius: 4px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 5;
+}
+
+.gallery-item-media .select-checkbox.checked {
+    background: var(--accent);
+}
+
+.gallery-item-media .select-checkbox.checked::after {
+    content: '✓';
+    color: white;
+    font-weight: bold;
+    font-size: 14px;
+}

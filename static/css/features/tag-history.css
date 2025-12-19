@@ -1,0 +1,70 @@
+.tag-history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+.tag-history-item {
+    background: var(--bg-main);
+    border: 1px solid var(--border-main);
+    border-radius: 6px;
+    padding: 15px;
+}
+
+.tag-history-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.tag-history-post-id {
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.tag-history-timestamp {
+    color: var(--txt-muted-2);
+    font-size: 12px;
+}
+
+.tag-history-changes {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    gap: 10px;
+    align-items: center;
+}
+
+.tag-list {
+    font-size: 12px;
+}
+
+.tag-list-label {
+    color: var(--txt-muted);
+    font-weight: 600;
+    margin-bottom: 5px;
+}
+
+.tag-list .tag {
+    display: inline-block;
+    background: var(--border-main);
+    padding: 3px 8px;
+    border-radius: 3px;
+    margin: 2px;
+}
+
+.tag-list.removed .tag {
+    background: var(--danger-bg);
+    color: var(--danger-txt);
+}
+
+.tag-list.added .tag {
+    background: var(--success-bg-dark);
+    color: var(--success-txt-light);
+}
+
+.tag-arrow {
+    color: var(--accent);
+    font-size: 20px;
+    text-align: center;
+}

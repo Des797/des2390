@@ -1,0 +1,28 @@
+.alert {
+    padding: 12px 20px;
+    border-radius: 6px;
+    margin-top: 15px;
+    display: none;
+}
+
+.alert.show {
+    display: block;
+}
+
+.alert-warning {
+    background: #78350f;
+    color: #fef3c7;
+    border-left: 4px solid var(--warning);
+}
+
+.alert-info {
+    background: #1e3a8a;
+    color: #dbeafe;
+    border-left: 4px solid #3b82f6;
+}
+
+.alert-success {
+    background: var(--success-bg-dark);
+    color: var(--success-txt-light);
+    border-left: 4px solid var(--accent);
+}

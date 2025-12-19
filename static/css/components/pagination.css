@@ -1,0 +1,38 @@
+.pagination {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 10px;
+    margin-top: 20px;
+    flex-wrap: wrap;
+}
+
+.pagination button {
+    padding: 8px 16px;
+    font-size: 12px;
+}
+
+.pagination span {
+    color: var(--txt-muted);
+}
+
+.pagination input[type="number"] {
+    width: 70px;
+    padding: 8px;
+    background: var(--bg-main);
+    border: 2px solid var(--border-main);
+    border-radius: 6px;
+    color: var(--txt-main);
+    font-size: 13px;
+    text-align: center;
+}
+
+.pagination .go-to-page {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.pagination .go-to-page button {
+    padding: 8px 12px;
+}

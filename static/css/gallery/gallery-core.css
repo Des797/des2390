@@ -1,0 +1,30 @@
+.gallery {
+    background: var(--bg-panel);
+    border-radius: 12px;
+    padding: 25px;
+    margin-top: 20px;
+    box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    border: 1px solid var(--border-main);
+}
+
+.gallery-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 15px;
+}
+
+.gallery-header h2 {
+    color: var(--accent);
+    margin: 0;
+}
+
+.gallery-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, 180px);
+    gap: 12px;
+    justify-content: center;
+    align-items: start;
+}
