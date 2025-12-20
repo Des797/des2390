@@ -155,6 +155,14 @@ function setupConfigListeners() {
     document.getElementById(ELEMENT_IDS.START_BTN).addEventListener('click', startScraper);
     document.getElementById(ELEMENT_IDS.STOP_BTN).addEventListener('click', stopScraper);
     
+    // Clear log button
+    const clearLogBtn = document.getElementById('clearLogBtn');
+    if (clearLogBtn) {
+        clearLogBtn.addEventListener('click', () => {
+            import('./scraper_ui.js').then(module => module.clearScraperLog());
+        });
+    }
+    
     // Search input
     const searchInput = document.getElementById(ELEMENT_IDS.SEARCH_TAGS);
     searchInput.addEventListener('focus', showSearchDropdown);

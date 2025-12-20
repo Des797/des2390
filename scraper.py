@@ -4,7 +4,7 @@ import time
 import logging
 import threading
 from datetime import datetime
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 
 logger = logging.getLogger(__name__)
 
@@ -21,15 +21,14 @@ class Scraper:
             "active": False,
             "current_tags": "",
             "current_page": 0,
-            "total_processed": 0,
-            "total_saved": 0,
-            "total_discarded": 0,
-            "total_skipped": 0,
+            "session_processed": 0,  # Posts downloaded this session
+            "session_skipped": 0,    # Posts skipped this session
+            "posts_remaining": 0,    # Posts left in current batch
             "current_mode": "search",
             "storage_warning": False,
-            "last_error": ""
-        }
-        
+            "last_error": "",
+            "log": []  # Activity log
+        }      
         self.lock = threading.Lock()
         self.thread = None
     
@@ -50,17 +49,17 @@ class Scraper:
             logger.error("Paths not configured")
             return False
         
-        # Reset state
         with self.lock:
             self.state["active"] = True
             self.state["current_tags"] = tags
             self.state["current_page"] = 0
             self.state["current_mode"] = "search" if tags else "newest"
-            self.state["total_processed"] = 0
-            self.state["total_saved"] = 0
-            self.state["total_discarded"] = 0
-            self.state["total_skipped"] = 0
+            self.state["session_processed"] = 0
+            self.state["session_skipped"] = 0
+            self.state["posts_remaining"] = 0
             self.state["last_error"] = ""
+            self.state["log"] = [] 
+
         
         # Add to search history
         if tags:
@@ -78,6 +77,22 @@ class Scraper:
         with self.lock:
             self.state["active"] = False
         logger.info("Scraper stopped")
+        
+    def _add_log(self, message: str, level: str = "info"):
+        """Add entry to activity log"""
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        
+        with self.lock:
+            # Keep only last 100 entries
+            if len(self.state["log"]) >= 100:
+                self.state["log"].pop(0)
+            
+            self.state["log"].append({
+                "timestamp": timestamp,
+                "message": message,
+                "level": level
+            })
     
     def _scraper_loop(self):
         """Main scraper loop"""
@@ -112,8 +127,12 @@ class Scraper:
                 posts = self.api_client.make_request(
                     tags=tags,
                     page=page,
-                    blacklist=blacklist
+                    blacklist=blacklist  # Always apply blacklist
                 )
+                
+                # Log API request
+                tag_display = tags if tags else "(newest posts)"
+                self._add_log(f"API request: page {page}, tags: {tag_display}")
                 
                 # Handle errors
                 if isinstance(posts, dict) and "error" in posts:
@@ -125,24 +144,34 @@ class Scraper:
                 # No posts returned
                 if not posts:
                     if self.state["current_mode"] == "search":
-                        # Switch to newest mode
-                        logger.info("Search exhausted, switching to newest mode")
+                        # Switch to newest mode with blacklist
+                        logger.info("Search exhausted, switching to newest mode with blacklist filtering")
+                        self._add_log("Search exhausted, switching to newest posts with blacklist filtering", "warning")
                         with self.lock:
                             self.state["current_mode"] = "newest"
                             self.state["current_page"] = 0
+                            self.state["current_tags"] = ""  # Clear search tags
                         continue
                     else:
                         # Wait and retry in newest mode
                         time.sleep(10)
                         continue
                 
-                # Process each post
-                for post in posts:
-                    if not self.state["active"]:
-                        break
-                    
-                    self._process_post(post)
-                
+                    # Update posts remaining
+                    with self.lock:
+                        self.state["posts_remaining"] = len(posts)
+
+                    # Process each post
+                    for i, post in enumerate(posts):
+                        if not self.state["active"]:
+                            break
+                        
+                        # Update remaining count
+                        with self.lock:
+                            self.state["posts_remaining"] = len(posts) - i - 1
+                        
+                        self._process_post(post, blacklist)
+    
                 # Increment page
                 with self.lock:
                     self.state["current_page"] += 1
@@ -158,22 +187,36 @@ class Scraper:
         
         logger.info("Scraper loop ended")
     
-    def _process_post(self, post: Dict[str, Any]):
+    def _process_post(self, post: Dict[str, Any], blacklist: List[str] = None):
         """Process a single post"""
         post_id = post.get("id")
         if not post_id:
             return
         
-        # Check if already processed
-        status = self.database.get_post_status(post_id)
-        if status in ["saved", "discarded"]:
-            with self.lock:
-                self.state["total_skipped"] += 1
-            return
-        
         # Extract tags
         tags_str = post.get("tags", "")
         tags_list = [tag.strip() for tag in tags_str.split() if tag.strip()]
+        
+        # Check blacklist if in newest mode
+        if blacklist and self.state["current_mode"] == "newest":
+            # Check if any tag is blacklisted
+            for tag in tags_list:
+                for blacklist_pattern in blacklist:
+                    # Support wildcard matching
+                    if self._matches_blacklist(tag, blacklist_pattern):
+                        logger.debug(f"Skipping post {post_id} due to blacklisted tag: {tag}")
+                        self._add_log(f"Skipped post {post_id} (blacklisted tag: {tag})", "warning")
+                        with self.lock:
+                            self.state["session_skipped"] += 1
+                        return
+        
+        # Check if already processed
+        status = self.database.get_post_status(post_id)
+        if status in ["saved", "discarded"]:
+            self._add_log(f"Skipped post {post_id} (already {status})")
+            with self.lock:
+                self.state["session_skipped"] += 1
+            return
         
         # Index in Elasticsearch if available
         if self.es and not self.database.is_post_indexed(post_id):
@@ -239,7 +282,7 @@ class Scraper:
                 "created_at": post.get("created_at", ""),
                 "change": post.get("change", ""),
                 "file_type": file_ext.lower(),
-                "duration": duration,  # Add duration field
+                "duration": duration,
                 "downloaded_at": datetime.now().isoformat(),
                 "status": "pending",
                 "timestamp": time.time()
@@ -256,6 +299,15 @@ class Scraper:
             
             # Update stats
             with self.lock:
-                self.state["total_processed"] += 1
+                self.state["session_processed"] += 1
             
+            self._add_log(f"Downloaded post {post_id} ({file_ext})")
             logger.info(f"Downloaded and cached post {post_id}")
+
+    def _matches_blacklist(self, tag: str, pattern: str) -> bool:
+        """Check if tag matches blacklist pattern (supports wildcards)"""
+        import re
+        # Convert wildcard pattern to regex
+        regex_pattern = pattern.replace('*', '.*')
+        regex_pattern = f'^{regex_pattern}$'
+        return bool(re.match(regex_pattern, tag, re.IGNORECASE))

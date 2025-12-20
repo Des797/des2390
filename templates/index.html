@@ -50,18 +50,26 @@
                     <button class="btn-danger" id="stopBtn" disabled>⏹️ Stop</button>
                 </div>
 
+                <div class="scraper-status-info" style="margin-top: 15px; padding: 15px; background: var(--bg-main); border-radius: 8px; border: 1px solid var(--border-main);">
+                    <div style="margin-bottom: 10px;">
+                        <strong style="color: var(--accent);">Current Search:</strong>
+                        <span id="currentSearchTags" style="color: var(--txt-main); margin-left: 10px; font-family: monospace;">-</span>
+                    </div>
+                    <div>
+                        <strong style="color: var(--accent);">Posts Remaining:</strong>
+                        <span id="postsRemaining" style="color: var(--txt-main); margin-left: 10px;">0</span>
+                    </div>
+                    <div style="margin-top: 10px;">
+                        <div style="width: 100%; height: 20px; background: var(--border-main); border-radius: 4px; overflow: hidden;">
+                            <div id="progressBar" style="height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-strong)); width: 0%; transition: width 0.3s;"></div>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="stats">
                     <div class="stat-card">
                         <div class="stat-label">Processed</div>
                         <div class="stat-value" id="statProcessed">0</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-label">Saved</div>
-                        <div class="stat-value" id="statSaved">0</div>
-                    </div>
-                    <div class="stat-card">
-                        <div class="stat-label">Discarded</div>
-                        <div class="stat-value" id="statDiscarded">0</div>
                     </div>
                     <div class="stat-card">
                         <div class="stat-label">Skipped</div>
@@ -74,6 +82,16 @@
                     <div class="stat-card">
                         <div class="stat-label">Current Page</div>
                         <div class="stat-value" id="statPage">0</div>
+                    </div>
+                </div>
+
+                <div class="scraper-log" style="margin-top: 20px; padding: 15px; background: var(--bg-main); border-radius: 8px; border: 1px solid var(--border-main);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <strong style="color: var(--accent);">Activity Log</strong>
+                        <button class="btn-secondary" id="clearLogBtn" style="padding: 4px 12px; font-size: 12px;">Clear Log</button>
+                    </div>
+                    <div id="scraperLog" style="max-height: 300px; overflow-y: auto; font-family: monospace; font-size: 12px; color: var(--txt-main); line-height: 1.6;">
+                        <div style="color: var(--txt-muted); font-style: italic;">No activity yet. Start the scraper to see logs.</div>
                     </div>
                 </div>
 
