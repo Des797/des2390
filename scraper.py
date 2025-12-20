@@ -157,20 +157,20 @@ class Scraper:
                         time.sleep(10)
                         continue
                 
-                    # Update posts remaining
-                    with self.lock:
-                        self.state["posts_remaining"] = len(posts)
+                # Update posts remaining
+                with self.lock:
+                    self.state["posts_remaining"] = len(posts)
 
-                    # Process each post
-                    for i, post in enumerate(posts):
-                        if not self.state["active"]:
-                            break
-                        
-                        # Update remaining count
-                        with self.lock:
-                            self.state["posts_remaining"] = len(posts) - i - 1
-                        
-                        self._process_post(post, blacklist)
+                # Process each post
+                for i, post in enumerate(posts):
+                    if not self.state["active"]:
+                        break
+                    
+                    # Update remaining count
+                    with self.lock:
+                        self.state["posts_remaining"] = len(posts) - i - 1
+                    
+                    self._process_post(post, blacklist)
     
                 # Increment page
                 with self.lock:
@@ -198,7 +198,7 @@ class Scraper:
         tags_list = [tag.strip() for tag in tags_str.split() if tag.strip()]
         
         # Check blacklist if in newest mode
-        if blacklist and self.state["current_mode"] == "newest":
+        if blacklist:
             # Check if any tag is blacklisted
             for tag in tags_list:
                 for blacklist_pattern in blacklist:
@@ -210,13 +210,46 @@ class Scraper:
                             self.state["session_skipped"] += 1
                         return
         
-        # Check if already processed
+        # ---- Disk-first existence check (authoritative) ----
+
+        file_url = post.get("file_url")
+        if not file_url:
+            return
+
+        file_ext = os.path.splitext(file_url)[1] or ".jpg"
+
+        # Check temp
+        temp_file = os.path.join(self.file_manager.temp_path, f"{post_id}{file_ext}")
+        file_on_disk = os.path.exists(temp_file)
+
+        # Check saved (dated folders)
+        if not file_on_disk and self.file_manager.save_path:
+            if os.path.exists(self.file_manager.save_path):
+                for folder in os.listdir(self.file_manager.save_path):
+                    folder_path = os.path.join(self.file_manager.save_path, folder)
+                    if not os.path.isdir(folder_path):
+                        continue
+                    candidate = os.path.join(folder_path, f"{post_id}{file_ext}")
+                    if os.path.exists(candidate):
+                        file_on_disk = True
+                        break
+
+        if file_on_disk:
+            # Heal DB state
+            self.database.set_post_status(post_id, "saved")
+            self._add_log(f"Skipped post {post_id} (already on disk)")
+            with self.lock:
+                self.state["session_skipped"] += 1
+            return
+
+        # ---- DB status check (secondary) ----
         status = self.database.get_post_status(post_id)
         if status in ["saved", "discarded"]:
             self._add_log(f"Skipped post {post_id} (already {status})")
             with self.lock:
                 self.state["session_skipped"] += 1
             return
+
         
         # Index in Elasticsearch if available
         if self.es and not self.database.is_post_indexed(post_id):
@@ -242,7 +275,14 @@ class Scraper:
         # Determine file extension
         file_ext = os.path.splitext(file_url)[1] or ".jpg"
         temp_file = os.path.join(self.file_manager.temp_path, f"{post_id}{file_ext}")
-        
+        final_file = os.path.join(self.file_manager.save_path, f"{post_id}{file_ext}")
+
+        # Skip if file already exists anywhere
+        if os.path.exists(temp_file) or os.path.exists(final_file):
+            self._add_log(f"Skipped post {post_id} (file already exists)")
+            with self.lock:
+                self.state["session_skipped"] += 1
+            return
         # Download
         if self.api_client.download_file(file_url, temp_file):
             # Generate video thumbnail if it's a video

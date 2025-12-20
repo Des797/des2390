@@ -111,10 +111,46 @@ def shutdown_handler(signum, frame):
 signal.signal(signal.SIGINT, shutdown_handler)   # Ctrl+C
 signal.signal(signal.SIGTERM, shutdown_handler)  # Kill signal
 
+def sync_db_with_disk(file_manager, database):
+    """
+    Reconcile database post_status with actual files on disk.
+    Disk is treated as the source of truth.
+    Returns counts of pending and saved posts.
+    """
+    pending_count = 0
+    saved_count = 0
+
+    # Pending (temp directory)
+    for post in file_manager.get_pending_posts():
+        post_id = post.get("id")
+        if post_id:
+            database.set_post_status(post_id, "pending")
+            pending_count += 1
+
+    # Saved (archive directory)
+    for post in file_manager.get_saved_posts():
+        post_id = post.get("id")
+        if post_id:
+            database.set_post_status(post_id, "saved")
+            saved_count += 1
+
+    return pending_count, saved_count
+
+
 
 if __name__ == "__main__":
     load_startup_config()
-    
+
+    # --- NEW: disk → DB reconciliation (optional, controlled by config) ---
+    auto_sync = db.load_config("auto_sync_disk", True)  # default True
+    if auto_sync:
+        logger.info("Synchronizing database state with disk...")
+        pending_count, saved_count = sync_db_with_disk(file_manager, db)
+        logger.info(f"Database synchronization complete: pending={pending_count}, saved={saved_count}")
+    else:
+        logger.info("Database synchronization skipped (auto_sync_disk disabled)")
+    # ------------------------------------------------------------------------
+
     # Print configuration
     app_config.print_info()
     

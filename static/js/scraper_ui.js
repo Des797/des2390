@@ -163,6 +163,28 @@ function renderTagHistoryPagination(total, perPage, currentPage) {
     });
 }
 
+function copyScraperLog() {
+    const logContainer = document.getElementById('scraperLog');
+    if (!logContainer) return;
+
+    const logText = logContainer.innerText;
+    if (!logText) {
+        showNotification('Log is empty', 'info');
+        return;
+    }
+
+    navigator.clipboard.writeText(logText)
+        .then(() => {
+            showNotification('Log copied to clipboard', 'success');
+        })
+        .catch(err => {
+            console.error('Failed to copy log:', err);
+            showNotification('Failed to copy log', 'error');
+        });
+}
+
+
+
 function clearScraperLog() {
     const logContainer = document.getElementById('scraperLog');
     if (logContainer) {
@@ -175,5 +197,6 @@ export {
     stopScraper,
     updateStatus,
     loadTagHistory,
+    copyScraperLog,
     clearScraperLog
 };
