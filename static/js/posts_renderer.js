@@ -250,13 +250,22 @@ function calculateRowSpan(width, height) {
     return mediaRowSpan;
 }
 
+// REPLACE the renderMedia function in posts_renderer.js with this fixed version
+
 /**
- * Render media HTML with proper thumbnail support
+ * Render media HTML with proper thumbnail support and duration placeholder
  */
 function renderMedia(post) {
     const mediaUrl = getMediaUrl(post);
     const isVideo = isVideoFile(post.file_type);
     const isGif = isGifFile(post.file_type);
+    
+    // Ensure post.id is valid
+    const postId = post.id;
+    if (!postId) {
+        console.error('Invalid post ID:', post);
+        return '<div>Error: Invalid post ID</div>';
+    }
     
     // Show placeholder initially, will be filled by fetchVideoDuration
     const duration = post.duration ? formatVideoDuration(post.duration) : null;
@@ -266,27 +275,28 @@ function renderMedia(post) {
     else if (isGif) mediaClass = 'media-gif';
 
     // Duration badge: show placeholder "..." initially, filled in after load
+    // IMPORTANT: Ensure data-post-id is set correctly
     const durationBadge = isVideo 
-        ? `<div class="video-duration" data-post-id="${post.id}">${duration || '...'}</div>` 
+        ? `<div class="video-duration" data-post-id="${postId}">${duration || '...'}</div>` 
         : '';
 
     if (isVideo) {
         let thumbUrl = '';
         if (post.status === POST_STATUS.PENDING) {
-            thumbUrl = `/temp/.thumbnails/${post.id}_thumb.jpg`;
+            thumbUrl = `/temp/.thumbnails/${postId}_thumb.jpg`;
         } else {
-            thumbUrl = `/saved/${post.date_folder}/.thumbnails/${post.id}_thumb.jpg`;
+            thumbUrl = `/saved/${post.date_folder}/.thumbnails/${postId}_thumb.jpg`;
         }
         
         return `
-            <div class="${mediaClass}" data-post-id="${post.id}">
+            <div class="${mediaClass}" data-post-id="${postId}">
                 <img class="video-poster" src="${thumbUrl}" alt="Video thumbnail" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; pointer-events: none; z-index: 1;">
                 <video src="${mediaUrl}" 
                        poster="${thumbUrl}"
                        muted 
                        loop 
                        preload="none"
-                       data-post-id="${post.id}"
+                       data-post-id="${postId}"
                        data-thumb-url="${thumbUrl}"
                        style="position: relative; z-index: 0;">
                 </video>
@@ -297,11 +307,11 @@ function renderMedia(post) {
     }
 
     return `
-        <div class="${mediaClass}" data-post-id="${post.id}">
+        <div class="${mediaClass}" data-post-id="${postId}">
             <img src="${mediaUrl}" 
-                 alt="Post ${post.id}" 
+                 alt="Post ${postId}" 
                  loading="lazy" 
-                 data-post-id="${post.id}">
+                 data-post-id="${postId}">
         </div>
     `;
 }

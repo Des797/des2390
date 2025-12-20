@@ -81,70 +81,10 @@ async function sortPosts(posts, sortBy, order) {
     return posts.sort(compareFn);
 }
 
-// Add getVideoDuration import
-async function getVideoDuration(postId) {
-    const endpoint = `/api/post/${postId}/duration`;
-    
-    console.log(`[Duration API] GET ${endpoint}`);
-    
-    try {
-        const response = await fetch(endpoint);
-        
-        console.log(`[Duration API] Response status: ${response.status} ${response.statusText}`);
-        
-        if (!response.ok) {
-            const errorText = await response.text();
-            console.error(`[Duration API] Error response body:`, errorText);
-            throw new Error(`HTTP ${response.status}: ${errorText}`);
-        }
-        
-        const data = await response.json();
-        console.log(`[Duration API] Response data:`, data);
-        
-        return data;
-    } catch (error) {
-        console.error(`[Duration API] Request failed:`, error);
-        throw error;
-    }
-}
-
-// Cache for video durations
-const durationCache = new Map();
+// REPLACE the updateVideoDurationBadges function in posts.js with this enhanced version
 
 /**
- * Fetch video duration on-demand for a post
- */
-async function fetchVideoDuration(postId) {
-    // Check cache first
-    if (durationCache.has(postId)) {
-        const cached = durationCache.get(postId);
-        console.log(`[Duration] Using cached duration for post ${postId}: ${cached}s`);
-        return cached;
-    }
-    
-    console.log(`[Duration] Fetching from API for post ${postId}...`);
-    
-    try {
-        const result = await getVideoDuration(postId);
-        
-        console.log(`[Duration] API response for post ${postId}:`, result);
-        
-        if (result && result.duration) {
-            durationCache.set(postId, result.duration);
-            console.log(`[Duration] Cached duration for post ${postId}: ${result.duration}s`);
-            return result.duration;
-        } else {
-            console.warn(`[Duration] Invalid response for post ${postId}:`, result);
-            return null;
-        }
-    } catch (error) {
-        console.error(`[Duration] API error for post ${postId}:`, error);
-        return null;
-    }
-}
-
-/**
- * Update duration badges for visible video posts
+ * Update duration badges for visible video posts with detailed logging
  */
 async function updateVideoDurationBadges() {
     const startTime = Date.now();
@@ -168,11 +108,35 @@ async function updateVideoDurationBadges() {
         console.log(`[Duration] Processing batch ${batchNum}/${totalBatches} (${batch.length} videos)`);
         
         await Promise.all(batch.map(async (container) => {
-            const postId = parseInt(container.dataset.postId);
             const durationBadge = container.querySelector('.video-duration');
             
+            // CRITICAL FIX: Validate post ID from badge, not container
+            if (!durationBadge) {
+                console.warn(`[Duration] No duration badge found in container`);
+                return;
+            }
+            
+            const postIdStr = durationBadge.dataset.postId;
+            if (!postIdStr) {
+                console.error(`[Duration] No data-post-id attribute on badge`);
+                failCount++;
+                return;
+            }
+            
+            const postId = parseInt(postIdStr);
+            if (isNaN(postId) || postId <= 0) {
+                console.error(`[Duration] Invalid post ID: "${postIdStr}" parsed as ${postId}`);
+                failCount++;
+                if (durationBadge) {
+                    durationBadge.textContent = '?';
+                    durationBadge.classList.add('error');
+                    durationBadge.title = 'Invalid post ID';
+                }
+                return;
+            }
+            
             // Skip if already has duration (not placeholder)
-            if (durationBadge && durationBadge.textContent && durationBadge.textContent !== '...') {
+            if (durationBadge.textContent && durationBadge.textContent !== '...') {
                 console.log(`[Duration] Skipping post ${postId} - already has duration: ${durationBadge.textContent}`);
                 skippedCount++;
                 return;
@@ -235,6 +199,70 @@ async function updateVideoDurationBadges() {
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     console.log(`[Duration] Complete! ${successCount} succeeded, ${failCount} failed, ${skippedCount} skipped in ${elapsed}s`);
 }
+
+/**
+ * Enhanced fetchVideoDuration with detailed logging
+ */
+async function fetchVideoDuration(postId) {
+    // Check cache first
+    if (durationCache.has(postId)) {
+        const cached = durationCache.get(postId);
+        console.log(`[Duration] Using cached duration for post ${postId}: ${cached}s`);
+        return cached;
+    }
+    
+    console.log(`[Duration] Fetching from API for post ${postId}...`);
+    
+    try {
+        const result = await getVideoDuration(postId);
+        
+        console.log(`[Duration] API response for post ${postId}:`, result);
+        
+        if (result && result.duration) {
+            durationCache.set(postId, result.duration);
+            console.log(`[Duration] Cached duration for post ${postId}: ${result.duration}s`);
+            return result.duration;
+        } else {
+            console.warn(`[Duration] Invalid response for post ${postId}:`, result);
+            return null;
+        }
+    } catch (error) {
+        console.error(`[Duration] API error for post ${postId}:`, error);
+        return null;
+    }
+}
+
+/**
+ * Enhanced getVideoDuration API call with logging
+ */
+async function getVideoDuration(postId) {
+    const endpoint = `/api/post/${postId}/duration`;
+    
+    console.log(`[Duration API] GET ${endpoint}`);
+    
+    try {
+        const response = await fetch(endpoint);
+        
+        console.log(`[Duration API] Response status: ${response.status} ${response.statusText}`);
+        
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error(`[Duration API] Error response body:`, errorText);
+            throw new Error(`HTTP ${response.status}: ${errorText}`);
+        }
+        
+        const data = await response.json();
+        console.log(`[Duration API] Response data:`, data);
+        
+        return data;
+    } catch (error) {
+        console.error(`[Duration API] Request failed:`, error);
+        throw error;
+    }
+}
+
+// Cache for video durations
+const durationCache = new Map();
 
 // Export the new function
 export { fetchVideoDuration, updateVideoDurationBadges };

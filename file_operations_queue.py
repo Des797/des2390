@@ -47,6 +47,7 @@ class FileOperationsQueue:
         self.lock = threading.Lock()
         self.running = False
         self.thread = None
+        self._stop_event = threading.Event()
         
         # Retry timing (exponential backoff)
         self.initial_retry_delay = 10  # seconds
@@ -59,16 +60,26 @@ class FileOperationsQueue:
             return
         
         self.running = True
+        self._stop_event.clear()
         self.thread = threading.Thread(target=self._process_queue, daemon=True)
         self.thread.start()
         logger.info("File operations queue processor started")
     
-    def stop(self):
-        """Stop the background queue processor"""
+    def stop(self, timeout=5):
+        """Stop the background queue processor with timeout"""
+        if not self.running:
+            return
+        
+        logger.info("Stopping file operations queue...")
         self.running = False
-        if self.thread:
-            self.thread.join(timeout=5)
-        logger.info("File operations queue processor stopped")
+        self._stop_event.set()
+        
+        if self.thread and self.thread.is_alive():
+            self.thread.join(timeout=timeout)
+            if self.thread.is_alive():
+                logger.warning("Queue thread did not stop within timeout")
+            else:
+                logger.info("File operations queue processor stopped")
     
     def add_operation(self, post_id: int, operation_type: OperationType, 
                      date_folder: Optional[str] = None) -> bool:
@@ -132,7 +143,7 @@ class FileOperationsQueue:
         """Background thread that processes queued operations"""
         logger.info("Queue processor thread started")
         
-        while self.running:
+        while self.running and not self._stop_event.is_set():
             try:
                 current_time = time.time()
                 operations_to_process = []
@@ -145,14 +156,17 @@ class FileOperationsQueue:
                 
                 # Process operations (outside lock to avoid blocking)
                 for post_id, op in operations_to_process:
+                    if not self.running or self._stop_event.is_set():
+                        break
                     self._try_operation(post_id, op)
                 
-                # Sleep before next iteration
-                time.sleep(5)
+                # Sleep with interruptible wait
+                self._stop_event.wait(timeout=5)
                 
             except Exception as e:
                 logger.error(f"Error in queue processor: {e}", exc_info=True)
-                time.sleep(5)
+                if not self._stop_event.is_set():
+                    self._stop_event.wait(timeout=5)
         
         logger.info("Queue processor thread stopped")
     

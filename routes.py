@@ -501,14 +501,15 @@ def create_routes(app, config, services):
             # Check temp directory
             video_path = None
             
-            if file_manager.temp_path:
+            if file_manager.temp_path and os.path.exists(file_manager.temp_path):
                 for filename in os.listdir(file_manager.temp_path):
                     if filename.startswith(str(post_id)) and filename.endswith(('.mp4', '.webm')):
                         video_path = os.path.join(file_manager.temp_path, filename)
+                        logger.info(f"Found video in temp: {video_path}")
                         break
             
             # Check save directory if not found
-            if not video_path and file_manager.save_path:
+            if not video_path and file_manager.save_path and os.path.exists(file_manager.save_path):
                 for date_folder in os.listdir(file_manager.save_path):
                     folder_path = os.path.join(file_manager.save_path, date_folder)
                     if not os.path.isdir(folder_path):
@@ -516,14 +517,17 @@ def create_routes(app, config, services):
                     for filename in os.listdir(folder_path):
                         if filename.startswith(str(post_id)) and filename.endswith(('.mp4', '.webm')):
                             video_path = os.path.join(folder_path, filename)
+                            logger.info(f"Found video in {date_folder}: {video_path}")
                             break
                     if video_path:
                         break
             
             if not video_path:
+                logger.error(f"Video not found for post {post_id}")
                 return jsonify({"error": "Video not found"}), 404
             
             # Get duration
+            logger.info(f"Getting duration for: {video_path}")
             duration = processor.get_video_duration(video_path)
             
             if duration is not None:
@@ -534,10 +538,14 @@ def create_routes(app, config, services):
                     "post_id": post_id
                 })
             else:
+                logger.error(f"Failed to get video duration for post {post_id}")
                 return jsonify({"error": "Failed to get video duration"}), 500
                 
+        except ValidationError as e:
+            logger.error(f"Validation error for post {post_id}: {e}")
+            return jsonify({"error": str(e)}), 400
         except Exception as e:
-            logger.error(f"Duration retrieval error: {e}", exc_info=True)
+            logger.error(f"Duration retrieval error for post {post_id}: {e}", exc_info=True)
             return jsonify({"error": str(e)}), 500
 
     # Autocomplete route

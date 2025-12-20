@@ -1,4 +1,6 @@
 import logging
+import signal
+import sys
 from flask import Flask
 
 # Import configuration
@@ -60,10 +62,9 @@ services = {
     'search': SearchService(db),
     'scraper': ScraperService(scraper, db),
     'autocomplete': AutocompleteService(api_client),
-    'file_manager': file_manager  # For route access
+    'file_manager': file_manager,
+    'queue': file_operations_queue
 }
-
-services['queue'] = file_operations_queue
 
 # Load startup configuration
 def load_startup_config():
@@ -82,6 +83,35 @@ def load_startup_config():
 # Register routes
 create_routes(app, app_config, services)
 
+
+# Graceful shutdown handler
+def shutdown_handler(signum, frame):
+    """Handle shutdown signals gracefully"""
+    logger.info(f"Received signal {signum}, shutting down gracefully...")
+    
+    try:
+        # Stop scraper first
+        if scraper.state["active"]:
+            logger.info("Stopping scraper...")
+            scraper.stop()
+        
+        # Stop queue processor
+        if file_operations_queue.running:
+            logger.info("Stopping file operations queue...")
+            file_operations_queue.stop()
+        
+        logger.info("Cleanup complete, exiting...")
+    except Exception as e:
+        logger.error(f"Error during shutdown: {e}")
+    finally:
+        sys.exit(0)
+
+
+# Register signal handlers
+signal.signal(signal.SIGINT, shutdown_handler)   # Ctrl+C
+signal.signal(signal.SIGTERM, shutdown_handler)  # Kill signal
+
+
 if __name__ == "__main__":
     load_startup_config()
     
@@ -95,8 +125,29 @@ if __name__ == "__main__":
     print("="*60 + "\n")
     
     try:
-        app.run(debug=app_config.DEBUG, host=app_config.HOST, port=app_config.PORT)
+        # Use threaded=False to avoid socket issues on Windows
+        app.run(
+            debug=app_config.DEBUG, 
+            host=app_config.HOST, 
+            port=app_config.PORT,
+            threaded=True,
+            use_reloader=False  # Disable reloader to prevent double queue initialization
+        )
+    except KeyboardInterrupt:
+        logger.info("\nReceived keyboard interrupt, shutting down...")
+    except Exception as e:
+        logger.error(f"Server error: {e}", exc_info=True)
     finally:
-        # Cleanup
-        file_operations_queue.stop()
-        print("Shutting down file operations queue...")
+        # Cleanup on exit
+        try:
+            if scraper.state.get("active"):
+                logger.info("Stopping scraper...")
+                scraper.stop()
+            
+            if file_operations_queue and file_operations_queue.running:
+                logger.info("Stopping file operations queue...")
+                file_operations_queue.stop()
+            
+            logger.info("Application shutdown complete")
+        except Exception as e:
+            logger.error(f"Cleanup error: {e}")
