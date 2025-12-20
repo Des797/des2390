@@ -10,7 +10,7 @@ from collections import deque
 logger = logging.getLogger(__name__)
 
 class Scraper:
-    """Main scraper for Rule34 posts with rate limiting and search queue"""
+    """Main scraper for Rule34 posts"""
     
     def __init__(self, api_client, file_manager, database, elasticsearch_client=None):
         self.api_client = api_client
@@ -25,21 +25,28 @@ class Scraper:
             "session_processed": 0,
             "session_skipped": 0,
             "posts_remaining": 0,
-            "total_posts_for_query": None,
-            "local_posts_for_query": None,
             "current_mode": "search",
             "storage_warning": False,
             "last_error": "",
             "log": [],
-            "rate_limit_wait": 0,
-            "rate_limit_active": False,
-            "search_queue": [],
-            "current_search_index": 0
+            "rate_limit_wait": 0,  # Seconds to wait before retry
+            "rate_limit_active": False,  # Is rate limiting active?
+            "search_queue": [],  # Queue of searches
+            "total_posts_api": 0,  # Total posts from API
+            "total_posts_local": 0,  # Total posts in ES
+            "resume_available": False,  # Can resume previous search?
+            "resume_page": 0  # Page to resume from
         }      
         self.lock = threading.Lock()
         self.thread = None
-        self.consecutive_502_errors = 0
-        self.last_request_time = 0
+        self._stop_flag = False
+        
+        # Rate limiting
+        self._rate_limit_failures = 0
+        self._last_success_time = time.time()
+        
+        # Memory optimization
+        self._processed_posts_cache = deque(maxlen=1000)  # Track recent posts only
     
     def get_state(self) -> Dict[str, Any]:
         """Get current scraper state"""
@@ -48,8 +55,40 @@ class Scraper:
             state_copy["requests_this_minute"] = self.api_client.get_requests_per_minute()
             return state_copy
     
-    def start(self, tags: str = "") -> bool:
-        """Start scraping with optional search queue"""
+    def add_to_queue(self, tags: str) -> bool:
+        """Add a search to the queue"""
+        with self.lock:
+            if tags not in self.state["search_queue"]:
+                self.state["search_queue"].append(tags)
+                self._add_log(f"Added to queue: {tags}", "info")
+                return True
+            return False
+    
+    def get_queue(self) -> List[str]:
+        """Get current search queue"""
+        with self.lock:
+            return self.state["search_queue"].copy()
+    
+    def clear_queue(self):
+        """Clear search queue"""
+        with self.lock:
+            self.state["search_queue"].clear()
+            self._add_log("Search queue cleared", "info")
+    
+    def check_resume_available(self, tags: str) -> Optional[int]:
+        try:
+            raw = self.database.load_config(f"last_page_{tags}", None)
+            if raw is None:
+                return None
+            page = int(raw)
+            if page > 0:
+                return page
+        except (ValueError, TypeError):
+            pass
+        return None
+    
+    def start(self, tags: str = "", resume: bool = False) -> bool:
+        """Start scraping"""
         if self.state["active"]:
             logger.warning("Scraper already running")
             return False
@@ -58,94 +97,99 @@ class Scraper:
             logger.error("Paths not configured")
             return False
         
-        # Parse search queue (separated by semicolons)
-        search_queue = []
-        if tags:
-            search_queue = [t.strip() for t in tags.split(';') if t.strip()]
-        
-        # Check for resume option
-        resume_page = None
-        if len(search_queue) == 1:
-            # Single search - check for saved progress
-            saved_page = self.database.load_config(f"last_page:{search_queue[0]}", None)
-            if saved_page and int(saved_page) > 0:
-                resume_page = int(saved_page)
-        
+        # Check for resume opportunity
+        resume_page = 0
+        if not resume:
+            last_page = self.check_resume_available(tags)
+            if last_page is not None:
+                with self.lock:
+                    self.state["resume_available"] = True
+                    self.state["resume_page"] = last_page
+                logger.info(f"Resume available for '{tags}' at page {last_page}")
+                return False  # Wait for user confirmation
+        else:
+            resume_page = self.state.get("resume_page", 0)
         with self.lock:
             self.state["active"] = True
-            self.state["search_queue"] = search_queue if search_queue else [""]
-            self.state["current_search_index"] = 0
-            self.state["current_tags"] = self.state["search_queue"][0]
-            self.state["current_page"] = resume_page if resume_page else 0
-            self.state["current_mode"] = "search" if self.state["current_tags"] else "newest"
+            self.state["current_tags"] = tags
+            self.state["current_page"] = resume_page
+            self.state["current_mode"] = "search" if tags else "newest"
             self.state["session_processed"] = 0
             self.state["session_skipped"] = 0
             self.state["posts_remaining"] = 0
-            self.state["total_posts_for_query"] = None
-            self.state["local_posts_for_query"] = None
             self.state["last_error"] = ""
-            self.state["log"] = [] 
+            self.state["log"] = []
             self.state["rate_limit_wait"] = 0
             self.state["rate_limit_active"] = False
-        
-        # Reset consecutive errors
-        self.consecutive_502_errors = 0
+            self.state["resume_available"] = False
+            self._rate_limit_failures = 0
+            self._stop_flag = False
+            
+            # Clear processed cache for new session
+            self._processed_posts_cache.clear()
         
         # Add to search history
-        for search in search_queue:
-            if search:
-                self.database.add_search_history(search)
+        if tags:
+            self.database.add_search_history(tags)
         
-        # Start background thread to calculate total/local posts
-        if self.es and self.state["current_tags"]:
-            threading.Thread(
-                target=self._calculate_progress_stats,
-                args=(self.state["current_tags"],),
-                daemon=True
-            ).start()
+        # Get total count from API (lazy)
+        if tags and self.es:
+            threading.Thread(target=self._fetch_total_counts, args=(tags,), daemon=True).start()
         
         # Start scraper thread
         self.thread = threading.Thread(target=self._scraper_loop, daemon=True)
         self.thread.start()
         
-        logger.info(f"Scraper started with queue: {self.state['search_queue']}")
-        if resume_page:
-            self._add_log(f"Resuming from page {resume_page}", "info")
+        logger.info(f"Scraper started with tags: '{tags}' (resume: {resume}, page: {resume_page})")
         return True
     
     def stop(self):
         """Stop scraping"""
         with self.lock:
-            # Save current progress
-            if self.state["current_tags"]:
-                self.database.save_config(
-                    f"last_page:{self.state['current_tags']}", 
-                    str(self.state["current_page"])
-                )
             self.state["active"] = False
+            self._stop_flag = True
         logger.info("Scraper stopped")
     
-    def add_to_queue(self, tags: str) -> bool:
-        """Add search to queue while scraper is running"""
-        if not tags:
-            return False
-        
-        with self.lock:
-            if tags not in self.state["search_queue"]:
-                self.state["search_queue"].append(tags)
-                self._add_log(f"Added to queue: {tags}", "info")
-                logger.info(f"Added to search queue: {tags}")
-                return True
-        return False
+    def _fetch_total_counts(self, tags: str):
+        """Fetch total counts from API and Elasticsearch (runs in background)"""
+        try:
+            # Get API count
+            api_count = self.api_client.get_post_count(tags)
+            
+            # Get local count from ES
+            local_count = 0
+            if self.es:
+                try:
+                    tag_list = [t.strip() for t in tags.split() if t.strip()]
+                    query = {
+                        "query": {
+                            "bool": {
+                                "must": [{"term": {"tags": tag}} for tag in tag_list]
+                            }
+                        }
+                    }
+                    result = self.es.count(index="objects", body=query)
+                    local_count = result.get("count", 0)
+                except Exception as e:
+                    logger.warning(f"ES count failed: {e}")
+            
+            with self.lock:
+                self.state["total_posts_api"] = api_count
+                self.state["total_posts_local"] = local_count
+                
+            logger.info(f"Total counts - API: {api_count}, Local: {local_count}")
+            
+        except Exception as e:
+            logger.error(f"Failed to fetch total counts: {e}")
     
     def _add_log(self, message: str, level: str = "info"):
-        """Add entry to activity log with memory limit"""
+        """Add entry to activity log"""
         timestamp = datetime.now().strftime("%H:%M:%S")
         
         with self.lock:
-            # Keep only last 50 entries (reduced from 100 for memory)
-            if len(self.state["log"]) >= 50:
-                self.state["log"] = self.state["log"][-25:]  # Keep last 25
+            # Keep only last 100 entries
+            if len(self.state["log"]) >= 100:
+                self.state["log"].pop(0)
             
             self.state["log"].append({
                 "timestamp": timestamp,
@@ -153,101 +197,34 @@ class Scraper:
                 "level": level
             })
     
-    def _calculate_progress_stats(self, tags: str):
-        """Calculate total posts for query (background thread)"""
-        if not self.es:
-            return
-        
-        try:
-            # Query API for total count (page 0, limit 1)
-            response = self.api_client.make_request(tags=tags, page=0, limit=1)
-            if isinstance(response, dict) and "count" in response:
-                total = response["count"]
-                with self.lock:
-                    self.state["total_posts_for_query"] = total
-                logger.info(f"Total posts for '{tags}': {total}")
-            
-            # Query Elasticsearch for local count
-            result = self.es.count(
-                index="objects",
-                body={"query": {"match": {"tags": tags}}}
-            )
-            local_count = result.get("count", 0)
-            
-            with self.lock:
-                self.state["local_posts_for_query"] = local_count
-            
-            logger.info(f"Local posts for '{tags}': {local_count}")
-            
-        except Exception as e:
-            logger.error(f"Failed to calculate progress stats: {e}")
-    
-    def _handle_rate_limit(self, status_code: int):
+    def _handle_rate_limit(self):
         """Handle rate limiting with exponential backoff"""
-        if status_code == 502 or status_code == 429:
-            self.consecutive_502_errors += 1
-            
-            # Calculate wait time (exponential backoff: 5s, 10s, 20s, 40s, ...)
-            base_wait = 5
-            wait_time = min(base_wait * (2 ** (self.consecutive_502_errors - 1)), 300)  # Max 5 min
-            
-            with self.lock:
-                self.state["rate_limit_wait"] = wait_time
-                self.state["rate_limit_active"] = True
-            
-            self._add_log(
-                f"Rate limit hit (error {status_code}). Waiting {wait_time}s before retry...",
-                "warning"
-            )
-            logger.warning(f"Rate limit: waiting {wait_time}s (attempt {self.consecutive_502_errors})")
-            
-            # Wait with countdown
-            for remaining in range(wait_time, 0, -1):
-                if not self.state["active"]:
-                    break
-                
-                with self.lock:
-                    self.state["rate_limit_wait"] = remaining
-                
-                time.sleep(1)
-            
-            with self.lock:
-                self.state["rate_limit_active"] = False
-                self.state["rate_limit_wait"] = 0
-    
-    def _move_to_next_search(self):
-        """Move to next search in queue"""
+        self._rate_limit_failures += 1
+        
+        # Exponential backoff: 30s, 60s, 120s, 240s, max 300s (5 min)
+        wait_time = min(30 * (2 ** (self._rate_limit_failures - 1)), 300)
+        
         with self.lock:
-            self.state["current_search_index"] += 1
-            
-            if self.state["current_search_index"] >= len(self.state["search_queue"]):
-                # All searches exhausted, switch to newest mode
-                logger.info("All searches exhausted, switching to newest mode")
-                self._add_log("All searches complete. Switching to newest posts...", "success")
-                self.state["current_mode"] = "newest"
-                self.state["current_tags"] = ""
-                self.state["current_page"] = 0
-                self.state["total_posts_for_query"] = None
-                self.state["local_posts_for_query"] = None
-            else:
-                # Move to next search
-                next_tags = self.state["search_queue"][self.state["current_search_index"]]
-                logger.info(f"Moving to next search: {next_tags}")
-                self._add_log(f"Starting next search: {next_tags}", "info")
-                self.state["current_tags"] = next_tags
-                self.state["current_page"] = 0
-                self.state["current_mode"] = "search"
-                
-                # Calculate stats for new search
-                if self.es and next_tags:
-                    threading.Thread(
-                        target=self._calculate_progress_stats,
-                        args=(next_tags,),
-                        daemon=True
-                    ).start()
+            self.state["rate_limit_active"] = True
+            self.state["rate_limit_wait"] = wait_time
+        
+        self._add_log(f"Rate limited. Waiting {wait_time}s before retry (attempt {self._rate_limit_failures})", "warning")
+        logger.warning(f"Rate limit hit. Waiting {wait_time}s")
+        
+        # Wait with countdown
+        start_wait = time.time()
+        while time.time() - start_wait < wait_time and not self._stop_flag:
+            remaining = wait_time - (time.time() - start_wait)
+            with self.lock:
+                self.state["rate_limit_wait"] = max(0, int(remaining))
+            time.sleep(1)
+        
+        with self.lock:
+            self.state["rate_limit_active"] = False
+            self.state["rate_limit_wait"] = 0
     
     def _scraper_loop(self):
-        """Main scraper loop with memory management"""
+        """Main scraper loop"""
         logger.info("Scraper loop started")
         
         blacklist = self.database.load_config("blacklist", "[]")
@@ -257,7 +234,7 @@ class Scraper:
         except:
             blacklist = []
         
-        while self.state["active"]:
+        while self.state["active"] and not self._stop_flag:
             try:
                 # Check storage
                 if not self.file_manager.check_storage(self.file_manager.temp_path):
@@ -267,15 +244,17 @@ class Scraper:
                         self.state["active"] = False
                     break
                 
-                # Rate limiting between requests (minimum 1 second)
-                current_time = time.time()
-                time_since_last = current_time - self.last_request_time
-                if time_since_last < 1.0:
-                    time.sleep(1.0 - time_since_last)
-                
                 # Get current tags and page
                 tags = self.state["current_tags"]
                 page = self.state["current_page"]
+                
+                # Save current page for resume
+                if tags:
+                    self.database.save_config(f"last_page_{tags}", str(page))
+                
+                # If in newest mode, clear tags
+                if self.state["current_mode"] == "newest":
+                    tags = ""
                 
                 # Make API request
                 posts = self.api_client.make_request(
@@ -284,54 +263,69 @@ class Scraper:
                     blacklist=blacklist
                 )
                 
-                self.last_request_time = time.time()
+                # Handle 502/rate limit errors
+                if isinstance(posts, dict) and "error" in posts:
+                    error_msg = posts["error"]
+                    with self.lock:
+                        self.state["last_error"] = error_msg
+                    
+                    if "502" in error_msg or "rate" in error_msg.lower():
+                        self._handle_rate_limit()
+                        continue
+                    
+                    time.sleep(5)
+                    continue
+                
+                # Success - reset rate limit counter
+                self._rate_limit_failures = 0
+                self._last_success_time = time.time()
                 
                 # Log API request
                 tag_display = tags if tags else "(newest posts)"
                 self._add_log(f"API request: page {page}, tags: {tag_display}")
                 
-                # Handle rate limit errors
-                if isinstance(posts, dict) and "error" in posts:
-                    error_msg = posts["error"]
-                    
-                    # Check if it's a rate limit error
-                    if "502" in error_msg or "429" in error_msg:
-                        self._handle_rate_limit(502)
-                        continue
-                    else:
-                        with self.lock:
-                            self.state["last_error"] = error_msg
-                        time.sleep(5)
-                        continue
-                
-                # Reset consecutive errors on success
-                self.consecutive_502_errors = 0
-                
-                # No posts returned
+                # No posts returned - search exhausted
                 if not posts:
                     if self.state["current_mode"] == "search":
-                        # Save progress
-                        if self.state["current_tags"]:
-                            self.database.save_config(
-                                f"last_page:{self.state['current_tags']}", 
-                                str(self.state["current_page"])
-                            )
+                        # Check if there are queued searches
+                        next_search = None
+                        with self.lock:
+                            if self.state["search_queue"]:
+                                next_search = self.state["search_queue"].pop(0)
                         
-                        # Move to next search
-                        self._move_to_next_search()
-                        continue
+                        if next_search:
+                            logger.info(f"Moving to next queued search: {next_search}")
+                            self._add_log(f"Search exhausted. Moving to: {next_search}", "info")
+                            with self.lock:
+                                self.state["current_tags"] = next_search
+                                self.state["current_page"] = 0
+                                self.state["current_mode"] = "search"
+                            
+                            # Get counts for new search
+                            if self.es:
+                                threading.Thread(target=self._fetch_total_counts, args=(next_search,), daemon=True).start()
+                            continue
+                        else:
+                            # No more queued searches, switch to newest
+                            logger.info("All searches exhausted, switching to newest mode")
+                            self._add_log("All searches complete. Switching to newest posts", "warning")
+                            with self.lock:
+                                self.state["current_mode"] = "newest"
+                                self.state["current_page"] = 0
+                                self.state["current_tags"] = ""
+                            continue
                     else:
-                        # Wait and retry in newest mode
+                        # Already in newest mode, wait and retry
                         time.sleep(10)
                         continue
                 
                 # Update posts remaining
                 with self.lock:
                     self.state["posts_remaining"] = len(posts)
-                
+
                 # Process each post
                 for i, post in enumerate(posts):
-                    if not self.state["active"]:
+                    if not self.state["active"] or self._stop_flag:
                         break
                     
                     # Update remaining count
@@ -339,15 +333,15 @@ class Scraper:
                         self.state["posts_remaining"] = len(posts) - i - 1
                     
                     self._process_post(post, blacklist)
-                
+                    
+                    # Memory management: periodic cleanup
+                    if i % 100 == 0:
+                        import gc
+                        gc.collect()
+    
                 # Increment page
                 with self.lock:
                     self.state["current_page"] += 1
-                
-                # Periodic memory cleanup (every 10 pages)
-                if self.state["current_page"] % 10 == 0:
-                    import gc
-                    gc.collect()
                 
                 # Small delay between pages
                 time.sleep(1)
@@ -359,7 +353,7 @@ class Scraper:
                 time.sleep(5)
         
         logger.info("Scraper loop ended")
-        
+    
     def _process_post(self, post: Dict[str, Any], blacklist: List[str] = None):
         """Process a single post"""
         post_id = post.get("id")
@@ -410,7 +404,6 @@ class Scraper:
 
         if file_on_disk:
             # ASYNC: Don't block on database - mark as saved in background
-            import threading
             threading.Thread(
                 target=lambda: self.database.set_post_status(post_id, "saved"),
                 daemon=True
@@ -435,8 +428,7 @@ class Scraper:
         if self.es and not self.database.is_post_indexed(post_id):
             def index_async():
                 try:
-                    obj_id = str(uuid.uuid4())
-                    self.es.index(index="objects", id=obj_id, document={
+                    self.es.index(index="objects", id=post_id, document={
                         "tags": tags_list,
                         "added": datetime.now(),
                         "post_id": post_id
@@ -513,7 +505,7 @@ class Scraper:
             
             self._add_log(f"Downloaded post {post_id} ({file_ext})")
             logger.info(f"Downloaded and cached post {post_id}")
-        
+
     def _matches_blacklist(self, tag: str, pattern: str) -> bool:
         """Check if tag matches blacklist pattern (supports wildcards)"""
         import re

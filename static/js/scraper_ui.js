@@ -9,19 +9,6 @@ import { renderTagHistoryItem, renderPaginationButtons } from './posts_renderer.
 async function startScraper() {
     const tags = document.getElementById(ELEMENT_IDS.SEARCH_TAGS).value;
     try {
-        await apiStartScraper(tags);
-        document.getElementById(ELEMENT_IDS.START_BTN).disabled = true;
-        document.getElementById(ELEMENT_IDS.STOP_BTN).disabled = false;
-        showNotification('Scraper started');
-        await loadSearchHistory();
-    } catch (error) {
-        showNotification(error.message || 'Failed to start scraper', 'error');
-    }
-}
-
-async function startScraper() {
-    const tags = document.getElementById(ELEMENT_IDS.SEARCH_TAGS).value;
-    try {
         const response = await apiStartScraper(tags);
         
         // Check if resume is available
@@ -127,6 +114,17 @@ function updateQueueDisplay(queue) {
                 <span>${index + 1}. ${tags}</span>
             </div>`
         ).join('');
+    }
+}
+
+async function stopScraper() {
+    try {
+        await apiStopScraper();
+        document.getElementById(ELEMENT_IDS.START_BTN).disabled = false;
+        document.getElementById(ELEMENT_IDS.STOP_BTN).disabled = true;
+        showNotification('Scraper stopped');
+    } catch (error) {
+        showNotification('Failed to stop scraper', 'error');
     }
 }
 
