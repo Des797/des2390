@@ -63,6 +63,49 @@ def create_routes(app, config, services):
     def index():
         tag_counts = tag_service.get_tag_counts()
         return render_template("index.html", tag_counts=json.dumps(tag_counts))
+
+    @app.route("/api/health")
+    def health_check():
+        """Quick health check endpoint - no authentication required"""
+        return jsonify({
+            "status": "ok",
+            "timestamp": time.time(),
+            "message": "Server is running"
+        })
+
+    @app.route("/api/debug/init")
+    @login_required
+    def debug_init():
+        """Debug endpoint to check what's happening on initialization"""
+        import sys
+        import os
+        
+        try:
+            # Check cache status
+            cache_count = post_service.database.get_cache_count()
+            cache_empty = post_service.database.is_cache_empty()
+            
+            # Check if cache is being initialized
+            cache_initialized = post_service._cache_initialized
+            
+            return jsonify({
+                "status": "ok",
+                "cache_count": cache_count,
+                "cache_empty": cache_empty,
+                "cache_initialized": cache_initialized,
+                "python_version": sys.version,
+                "cwd": os.getcwd(),
+                "temp_path": file_manager.temp_path,
+                "save_path": file_manager.save_path,
+                "database_path": config.DATABASE_PATH
+            })
+        except Exception as e:
+            logger.error(f"Debug init error: {e}", exc_info=True)
+            return jsonify({
+                "status": "error",
+                "error": str(e),
+                "traceback": traceback.format_exc()
+            }), 500
     
     # Status route
     @app.route("/api/status")

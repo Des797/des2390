@@ -1,6 +1,7 @@
 import logging
 import signal
 import sys
+import threading
 from flask import Flask
 
 # Import configuration
@@ -124,7 +125,6 @@ def sync_db_with_disk_optimized(file_manager, database):
     pending_count = 0
     saved_count = 0
     
-    # Only update status table, cache will be built lazily on demand
     logger.info("Syncing database status with disk (fast mode)...")
     
     def process_pending_file(json_file):
@@ -193,10 +193,20 @@ def sync_db_with_disk_optimized(file_manager, database):
     return pending_count, saved_count
 
 
+def async_database_sync():
+    """Run database sync in background thread"""
+    try:
+        logger.info("Starting background database sync...")
+        pending_count, saved_count = sync_db_with_disk_optimized(file_manager, db)
+        logger.info(f"Background sync complete: pending={pending_count}, saved={saved_count}")
+    except Exception as e:
+        logger.error(f"Background sync failed: {e}", exc_info=True)
+
+
 if __name__ == "__main__":
     load_startup_config()
 
-    # Optimized disk → DB reconciliation
+    # Optimized disk → DB reconciliation (NON-BLOCKING)
     auto_sync = db.load_config("auto_sync_disk", "true")
     
     # Handle both string and bool values
@@ -204,9 +214,11 @@ if __name__ == "__main__":
         auto_sync = auto_sync.lower() in ('true', '1', 'yes')
     
     if auto_sync:
-        logger.info("Synchronizing database state with disk (optimized)...")
-        pending_count, saved_count = sync_db_with_disk_optimized(file_manager, db)
-        logger.info(f"Database synchronization complete: pending={pending_count}, saved={saved_count}")
+        # Run sync in background thread so it doesn't block server startup
+        logger.info("Starting database synchronization in background...")
+        sync_thread = threading.Thread(target=async_database_sync, daemon=True)
+        sync_thread.start()
+        logger.info("Server starting while sync runs in background...")
     else:
         logger.info("Database synchronization skipped (auto_sync_disk disabled)")
 
@@ -217,6 +229,11 @@ if __name__ == "__main__":
     print("\n" + "="*60)
     print("File Operations Queue: ACTIVE")
     print("Background retry processor running for locked files")
+    print("="*60 + "\n")
+    
+    print("🚀 Server is starting...")
+    print("📊 Database sync running in background (non-blocking)")
+    print("🌐 Server will be responsive immediately")
     print("="*60 + "\n")
     
     try:
