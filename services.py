@@ -293,10 +293,28 @@ class ScraperService:
         self.scraper = scraper
         self.database = database
     
-    def start_scraper(self, tags: str = "") -> bool:
-        """Start the scraper"""
+    def start_scraper(self, tags: str = "", resume: bool = False):
+        """
+        Start the scraper
+        
+        Returns:
+            - True if started successfully
+            - False if failed
+            - Dict with resume info if resume is available
+        """
         tags = validate_tags(tags) if tags else ""
-        return self.scraper.start(tags)
+        
+        # Check for resume opportunity if not explicitly resuming
+        if not resume and tags:
+            resume_page = self.scraper.check_resume_available(tags)
+            if resume_page and resume_page > 0:
+                return {
+                    "resume_available": True,
+                    "resume_page": resume_page,
+                    "tags": tags
+                }
+        
+        return self.scraper.start(tags, resume=resume)
     
     def stop_scraper(self) -> bool:
         """Stop the scraper"""
@@ -313,14 +331,18 @@ class ScraperService:
                 "active": False,
                 "current_tags": "",
                 "current_page": 0,
-                "total_processed": 0,
-                "total_saved": 0,
-                "total_discarded": 0,
-                "total_skipped": 0,
+                "session_processed": 0,
+                "session_skipped": 0,
+                "posts_remaining": 0,
                 "current_mode": "search",
                 "storage_warning": False,
                 "last_error": str(e),
-                "requests_this_minute": 0
+                "requests_this_minute": 0,
+                "rate_limit_wait": 0,
+                "rate_limit_active": False,
+                "search_queue": [],
+                "total_posts_api": 0,
+                "total_posts_local": 0
             }
 
 

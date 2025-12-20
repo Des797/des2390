@@ -139,7 +139,55 @@ class Rule34APIClient:
         except Exception as e:
             logger.error(f"Autocomplete request failed: {e}")
             return []
-    
+
+    def get_post_count(self, tags: str = "") -> int:
+        """
+        Get total number of posts matching tags from API
+        
+        Args:
+            tags: Search tags (space separated)
+            
+        Returns:
+            Total post count, or 0 if unavailable
+        """
+        try:
+            import requests
+            from urllib.parse import urlencode
+            
+            # Rule34 API endpoint for count
+            # Note: This uses page 0 with limit=1 to get count from response
+            params = {
+                "page": "dapi",
+                "s": "post",
+                "q": "index",
+                "limit": 1,
+                "pid": 0
+            }
+            
+            if tags:
+                params["tags"] = tags
+            
+            url = f"https://api.rule34.xxx/index.php?{urlencode(params)}"
+            
+            response = requests.get(url, timeout=30)
+            
+            if response.status_code == 200:
+                # Parse XML to get count attribute
+                import xml.etree.ElementTree as ET
+                root = ET.fromstring(response.content)
+                
+                # The posts element has a count attribute
+                count = root.get('count')
+                if count:
+                    return int(count)
+            
+            logger.warning(f"Could not get post count for tags: {tags}")
+            return 0
+            
+        except Exception as e:
+            logger.error(f"Failed to get post count: {e}")
+            return 0
+
     def download_file(self, url: str, save_path: str) -> bool:
         """Download file from URL to path"""
         try:

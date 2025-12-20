@@ -155,6 +155,21 @@ function setupConfigListeners() {
     document.getElementById(ELEMENT_IDS.START_BTN).addEventListener('click', startScraper);
     document.getElementById(ELEMENT_IDS.STOP_BTN).addEventListener('click', stopScraper);
     
+    // Queue buttons
+    const addToQueueBtn = document.getElementById('addToQueueBtn');
+    if (addToQueueBtn) {
+        addToQueueBtn.addEventListener('click', () => {
+            import('./scraper_ui.js').then(module => module.addToQueue());
+        });
+    }
+    
+    const clearQueueBtn = document.getElementById('clearQueueBtn');
+    if (clearQueueBtn) {
+        clearQueueBtn.addEventListener('click', () => {
+            import('./scraper_ui.js').then(module => module.clearQueue());
+        });
+    }
+    
     // Copy log button
     const copyLogBtn = document.getElementById('copyLogBtn');
     if (copyLogBtn) {

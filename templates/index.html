@@ -49,6 +49,19 @@
                     <button class="btn-primary" id="startBtn">▶️ Start</button>
                     <button class="btn-danger" id="stopBtn" disabled>⏹️ Stop</button>
                 </div>
+                
+                <div class="search-queue-section" style="margin-top: 15px; padding: 15px; background: var(--bg-main); border-radius: 8px; border: 1px solid var(--border-main);">
+                    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <strong style="color: var(--accent);">Search Queue</strong>
+                        <div>
+                            <button class="btn-primary" id="addToQueueBtn" style="padding: 4px 12px; font-size: 12px; margin-right: 5px;">+ Add Current to Queue</button>
+                            <button class="btn-secondary" id="clearQueueBtn" style="padding: 4px 12px; font-size: 12px;">Clear Queue</button>
+                        </div>
+                    </div>
+                    <div id="searchQueue" style="min-height: 30px; font-family: monospace; font-size: 12px;">
+                        <div style="color: var(--txt-muted); font-style: italic;">Queue is empty</div>
+                    </div>
+                </div>
 
                 <div class="scraper-status-info" style="margin-top: 15px; padding: 15px; background: var(--bg-main); border-radius: 8px; border: 1px solid var(--border-main);">
                     <div style="margin-bottom: 10px;">
@@ -63,6 +76,18 @@
                         <div style="width: 100%; height: 20px; background: var(--border-main); border-radius: 4px; overflow: hidden;">
                             <div id="progressBar" style="height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-strong)); width: 0%; transition: width 0.3s;"></div>
                         </div>
+                    </div>
+                </div>
+
+                <div id="rateLimitContainer" style="display: none; margin-top: 15px; padding: 15px; background: var(--bg-main); border-radius: 8px; border: 1px solid #f59e0b;">
+                    <div style="margin-bottom: 10px;">
+                        <strong style="color: #f59e0b;">⚠️ Rate Limit Active</strong>
+                    </div>
+                    <div id="rateLimitText" style="color: var(--txt-main); margin-bottom: 10px;">
+                        Waiting before retry...
+                    </div>
+                    <div style="width: 100%; height: 20px; background: var(--border-main); border-radius: 4px; overflow: hidden;">
+                        <div id="rateLimitBar" style="height: 100%; background: linear-gradient(90deg, #f59e0b, #fb923c); width: 0%; transition: width 1s linear;"></div>
                     </div>
                 </div>
 

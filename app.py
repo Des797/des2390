@@ -108,48 +108,107 @@ def shutdown_handler(signum, frame):
 
 
 # Register signal handlers
-signal.signal(signal.SIGINT, shutdown_handler)   # Ctrl+C
-signal.signal(signal.SIGTERM, shutdown_handler)  # Kill signal
+signal.signal(signal.SIGINT, shutdown_handler)
+signal.signal(signal.SIGTERM, shutdown_handler)
 
-def sync_db_with_disk(file_manager, database):
+def sync_db_with_disk_optimized(file_manager, database):
     """
-    Reconcile database post_status with actual files on disk.
-    Disk is treated as the source of truth.
-    Returns counts of pending and saved posts.
+    Optimized database sync - only updates status table, not full cache rebuild
+    Returns counts of pending and saved posts
     """
+    import os
+    import time
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    
+    start_time = time.time()
     pending_count = 0
     saved_count = 0
-
-    # Pending (temp directory)
-    for post in file_manager.get_pending_posts():
-        post_id = post.get("id")
-        if post_id:
+    
+    # Only update status table, cache will be built lazily on demand
+    logger.info("Syncing database status with disk (fast mode)...")
+    
+    def process_pending_file(json_file):
+        """Process single pending JSON file"""
+        try:
+            post_id = int(json_file.replace('.json', ''))
             database.set_post_status(post_id, "pending")
-            pending_count += 1
-
-    # Saved (archive directory)
-    for post in file_manager.get_saved_posts():
-        post_id = post.get("id")
-        if post_id:
-            database.set_post_status(post_id, "saved")
-            saved_count += 1
-
+            return 1
+        except:
+            return 0
+    
+    def process_saved_folder(date_folder):
+        """Process single saved folder"""
+        count = 0
+        try:
+            folder_path = os.path.join(file_manager.save_path, date_folder)
+            if not os.path.isdir(folder_path):
+                return 0
+            
+            for filename in os.listdir(folder_path):
+                if filename.endswith('.json'):
+                    try:
+                        post_id = int(filename.replace('.json', ''))
+                        database.set_post_status(post_id, "saved")
+                        count += 1
+                    except:
+                        pass
+        except Exception as e:
+            logger.error(f"Error processing folder {date_folder}: {e}")
+        return count
+    
+    # Process pending posts (temp directory)
+    if file_manager.temp_path and os.path.exists(file_manager.temp_path):
+        try:
+            json_files = [f for f in os.listdir(file_manager.temp_path) if f.endswith('.json')]
+            
+            with ThreadPoolExecutor(max_workers=10) as executor:
+                futures = [executor.submit(process_pending_file, f) for f in json_files]
+                for future in as_completed(futures):
+                    pending_count += future.result()
+            
+            logger.info(f"Synced {pending_count} pending posts")
+        except Exception as e:
+            logger.error(f"Error syncing pending posts: {e}")
+    
+    # Process saved posts (archive directory)
+    if file_manager.save_path and os.path.exists(file_manager.save_path):
+        try:
+            date_folders = [f for f in os.listdir(file_manager.save_path) 
+                          if os.path.isdir(os.path.join(file_manager.save_path, f))]
+            
+            with ThreadPoolExecutor(max_workers=10) as executor:
+                futures = [executor.submit(process_saved_folder, f) for f in date_folders]
+                for i, future in enumerate(as_completed(futures), 1):
+                    saved_count += future.result()
+                    if i % 10 == 0:
+                        logger.info(f"Processed {i}/{len(date_folders)} folders...")
+            
+            logger.info(f"Synced {saved_count} saved posts")
+        except Exception as e:
+            logger.error(f"Error syncing saved posts: {e}")
+    
+    elapsed = time.time() - start_time
+    logger.info(f"Database sync completed in {elapsed:.2f}s")
+    
     return pending_count, saved_count
-
 
 
 if __name__ == "__main__":
     load_startup_config()
 
-    # --- NEW: disk → DB reconciliation (optional, controlled by config) ---
-    auto_sync = db.load_config("auto_sync_disk", True)  # default True
+    # Optimized disk → DB reconciliation
+    auto_sync = db.load_config("auto_sync_disk", "true")
+    
+    # Handle both string and bool values
+    if isinstance(auto_sync, str):
+        auto_sync = auto_sync.lower() in ('true', '1', 'yes')
+    
     if auto_sync:
-        logger.info("Synchronizing database state with disk...")
-        pending_count, saved_count = sync_db_with_disk(file_manager, db)
+        logger.info("Synchronizing database state with disk (optimized)...")
+        pending_count, saved_count = sync_db_with_disk_optimized(file_manager, db)
         logger.info(f"Database synchronization complete: pending={pending_count}, saved={saved_count}")
     else:
         logger.info("Database synchronization skipped (auto_sync_disk disabled)")
-    # ------------------------------------------------------------------------
 
     # Print configuration
     app_config.print_info()
@@ -161,20 +220,18 @@ if __name__ == "__main__":
     print("="*60 + "\n")
     
     try:
-        # Use threaded=False to avoid socket issues on Windows
         app.run(
             debug=app_config.DEBUG, 
             host=app_config.HOST, 
             port=app_config.PORT,
             threaded=True,
-            use_reloader=False  # Disable reloader to prevent double queue initialization
+            use_reloader=False
         )
     except KeyboardInterrupt:
         logger.info("\nReceived keyboard interrupt, shutting down...")
     except Exception as e:
         logger.error(f"Server error: {e}", exc_info=True)
     finally:
-        # Cleanup on exit
         try:
             if scraper.state.get("active"):
                 logger.info("Stopping scraper...")
