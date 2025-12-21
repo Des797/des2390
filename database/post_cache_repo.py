@@ -36,7 +36,7 @@ class PostCacheRepository:
                             post_data.get('file_path', ''),
                             post_data.get('downloaded_at', ''),
                             post_data.get('created_at', ''),
-                            post_data.get('duration', None)  # Add duration
+                            post_data.get('duration', None)
                         )
                     )
             logger.info(f"Cached post {post_data['id']}")
@@ -84,28 +84,74 @@ class PostCacheRepository:
         limit: int = 1000,
         offset: int = 0,
         sort_by: str = 'timestamp',
-        order: str = 'DESC'
+        order: str = 'DESC',
+        search_query: Optional[str] = None
     ) -> List[Dict[str, Any]]:
-        """Get posts from cache with pagination and sorting"""
+        """
+        Get posts from cache with SERVER-SIDE pagination, sorting, and text search
+        
+        Args:
+            status: Filter by status (pending/saved/None for all)
+            limit: Number of posts to return
+            offset: Starting position
+            sort_by: Column to sort by (timestamp, score, post_id, owner, width, height, created_at)
+            order: Sort order (ASC/DESC)
+            search_query: Text search query (searches owner, title, tags)
+        """
         try:
             with self.core.get_connection() as conn:
-                query = "SELECT * FROM post_cache"
+                # Base query
+                query = "SELECT * FROM post_cache WHERE 1=1"
                 params = []
 
+                # Status filter
                 if status:
-                    query += " WHERE status = ?"
+                    query += " AND status = ?"
                     params.append(status)
 
-                valid_sorts = ['timestamp', 'score', 'post_id', 'owner', 'width', 'height']
-                if sort_by not in valid_sorts:
-                    sort_by = 'timestamp'
+                # Text search filter (searches owner, title, and tags)
+                if search_query and search_query.strip():
+                    search_term = f"%{search_query}%"
+                    query += " AND (owner LIKE ? OR title LIKE ? OR tags LIKE ?)"
+                    params.extend([search_term, search_term, search_term])
 
-                query += f" ORDER BY {sort_by} {order} LIMIT ? OFFSET ?"
+                # Validate sort column
+                valid_sorts = {
+                    'timestamp': 'timestamp',
+                    'download': 'downloaded_at',  # Alias
+                    'upload': 'created_at',
+                    'score': 'score',
+                    'post_id': 'post_id',
+                    'id': 'post_id',  # Alias
+                    'owner': 'owner',
+                    'width': 'width',
+                    'height': 'height',
+                    'tags': 'tags'  # Will sort by tag count
+                }
+                
+                sort_column = valid_sorts.get(sort_by, 'timestamp')
+                
+                # Validate order
+                order = 'DESC' if order.upper() == 'DESC' else 'ASC'
+                
+                # Special handling for tag count sorting
+                if sort_by == 'tags':
+                    # SQLite doesn't have array length, so we count commas in JSON
+                    query += f" ORDER BY (length(tags) - length(replace(tags, ',', ''))) {order}"
+                else:
+                    query += f" ORDER BY {sort_column} {order}"
+                
+                # Add pagination
+                query += " LIMIT ? OFFSET ?"
                 params.extend([limit, offset])
+
+                logger.debug(f"Query: {query}")
+                logger.debug(f"Params: {params}")
 
                 cursor = conn.execute(query, params)
                 rows = cursor.fetchall()
 
+            # Convert rows to dicts
             posts = []
             for row in rows:
                 posts.append({
@@ -126,21 +172,37 @@ class PostCacheRepository:
                     'created_at': row[14],
                     'duration': row[15] if len(row) > 15 else None
                 })
+            
             return posts
         except Exception as e:
             logger.error(f"Failed to get cached posts: {e}", exc_info=True)
             return []
 
-    def get_cache_count(self, status: Optional[str] = None) -> int:
-        """Get total count of cached posts"""
+    def get_cache_count(self, status: Optional[str] = None, search_query: Optional[str] = None) -> int:
+        """
+        Get total count of cached posts with optional filters
+        
+        Args:
+            status: Filter by status
+            search_query: Text search query
+        """
         try:
             with self.core.get_connection() as conn:
-                with conn:
-                    if status:
-                        cursor = conn.execute("SELECT COUNT(*) FROM post_cache WHERE status = ?", (status,))
-                    else:
-                        cursor = conn.execute("SELECT COUNT(*) FROM post_cache")
-                    return cursor.fetchone()[0]
+                query = "SELECT COUNT(*) FROM post_cache WHERE 1=1"
+                params = []
+                
+                if status:
+                    query += " AND status = ?"
+                    params.append(status)
+                
+                # Text search filter
+                if search_query and search_query.strip():
+                    search_term = f"%{search_query}%"
+                    query += " AND (owner LIKE ? OR title LIKE ? OR tags LIKE ?)"
+                    params.extend([search_term, search_term, search_term])
+                
+                cursor = conn.execute(query, params)
+                return cursor.fetchone()[0]
         except Exception as e:
             logger.error(f"Failed to get cache count: {e}", exc_info=True)
             return 0
@@ -153,7 +215,6 @@ class PostCacheRepository:
             logger.error(f"Failed to check if cache is empty: {e}", exc_info=True)
             return True
 
-    # ---------------- Full Cache Rebuild ----------------
     def rebuild_cache_from_files(self, file_manager) -> bool:
         """Rebuild the entire cache from file_manager"""
         logger.info("Starting full cache rebuild...")
@@ -180,4 +241,3 @@ class PostCacheRepository:
         except Exception as e:
             logger.error(f"Cache rebuild failed: {e}", exc_info=True)
             return False
-

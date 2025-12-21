@@ -259,70 +259,46 @@ class FileManager:
             target_dir = os.path.join(self.save_path, date_folder)
             self.ensure_directory(target_dir)
             
-            # Get file path and check if it exists
-            file_path = post_data.get("file_path")
-            if not file_path:
-                logger.error(f"No file_path in post data for {post_id}")
-                return False
-            
-            # Handle case where file_path might be just filename
-            if not os.path.isabs(file_path):
-                file_path = os.path.join(self.temp_path, file_path)
+            # Get file path - use EXACT match, not prefix
+            file_ext = post_data.get('file_type', '.jpg')
+            expected_filename = f"{post_id}{file_ext}"
+            file_path = os.path.join(self.temp_path, expected_filename)
             
             if not os.path.exists(file_path):
-                # Try alternative: post_id + file_type
-                file_ext = post_data.get('file_type', '.jpg')
-                alt_path = os.path.join(self.temp_path, f"{post_id}{file_ext}")
-                
-                if os.path.exists(alt_path):
-                    file_path = alt_path
-                    logger.info(f"Found file at alternative path: {alt_path}")
-                else:
-                    logger.error(f"File not found for post {post_id}: {file_path}")
-                    logger.error(f"Also tried: {alt_path}")
-                    return False
+                logger.error(f"File not found for post {post_id}: {file_path}")
+                return False
             
-            # Now file_path is verified to exist - proceed with move
-            file_ext = post_data.get('file_type', os.path.splitext(file_path)[1])
-            target_file = os.path.join(target_dir, f"{post_id}{file_ext}")
+            # Move files
+            target_file = os.path.join(target_dir, expected_filename)
             target_json = os.path.join(target_dir, f"{post_id}.json")
             
-            # Move media file with retry logic for locked files
+            # Move media file with retry
             if not self._safe_move_file(file_path, target_file):
                 logger.error(f"Failed to move media file for post {post_id}")
                 return False
             
-            logger.debug(f"Moved {file_path} to {target_file}")
-
-            # Move thumbnail if exists (optional - don't fail if missing)
-            video_dir = os.path.dirname(file_path)
-            thumb_path = os.path.join(video_dir, '.thumbnails', f"{post_id}_thumb.jpg")
+            # Move thumbnail if exists
+            thumb_filename = f"{post_id}_thumb.jpg"
+            thumb_path = os.path.join(self.temp_path, '.thumbnails', thumb_filename)
             
             if os.path.exists(thumb_path):
                 target_thumb_dir = os.path.join(target_dir, '.thumbnails')
                 os.makedirs(target_thumb_dir, exist_ok=True)
-                target_thumb = os.path.join(target_thumb_dir, f"{post_id}_thumb.jpg")
+                target_thumb = os.path.join(target_thumb_dir, thumb_filename)
                 
-                # Try to move thumbnail, but don't fail the entire operation if it fails
-                if self._safe_move_file(thumb_path, target_thumb):
-                    logger.debug(f"Moved thumbnail to {target_thumb}")
-                else:
-                    logger.warning(f"Failed to move thumbnail for post {post_id}, but continuing...")
-            else:
-                logger.debug(f"No thumbnail found for post {post_id} (will be generated on-demand)")
+                if not self._safe_move_file(thumb_path, target_thumb):
+                    logger.warning(f"Failed to move thumbnail for post {post_id}")
             
-            # Move JSON - use safe move here too
+            # Move JSON
             if not self._safe_move_file(json_path, target_json):
                 logger.error(f"Failed to move JSON for post {post_id}")
-                # Try to rollback media file
+                # Rollback
                 try:
                     shutil.move(target_file, file_path)
-                    logger.info(f"Rolled back media file for post {post_id}")
-                except Exception as rollback_err:
-                    logger.error(f"Failed to rollback media file: {rollback_err}")
+                except Exception:
+                    pass
                 return False
             
-            logger.debug(f"Moved JSON to {target_json}")
             logger.info(f"Saved post {post_id} to {date_folder}")
             return True
                 

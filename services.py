@@ -1,4 +1,4 @@
-"""Business logic layer between routes and data - OPTIMIZED"""
+"""Business logic layer - OPTIMIZED with server-side sorting/filtering"""
 import logging
 from typing import Dict, List, Any, Optional
 from exceptions import PostNotFoundError, ValidationError, StorageError
@@ -33,56 +33,76 @@ class PostService:
                 logger.error(f"Failed to initialize cache: {e}", exc_info=True)
                 raise
     
-    def get_posts(self, filter_type: str = 'all', limit: int = 10000, offset: int = 0) -> Dict[str, Any]:
+    def get_posts(
+        self, 
+        filter_type: str = 'all', 
+        limit: int = 100000, 
+        offset: int = 0,
+        sort_by: str = 'timestamp',
+        order: str = 'DESC',
+        search_query: Optional[str] = None
+    ) -> Dict[str, Any]:
         """
-        Get posts with pagination - OPTIMIZED
+        Get posts with SERVER-SIDE pagination, sorting, and filtering
+        
+        Args:
+            filter_type: 'all', 'pending', 'saved'
+            limit: Number of posts per page
+            offset: Starting position
+            sort_by: Sort column (timestamp, score, id, owner, etc.)
+            order: 'ASC' or 'DESC'
+            search_query: Text search (searches owner, title, tags)
         
         Returns: {
             'posts': [...],
-            'total': count,
+            'total': count (with filters applied),
             'limit': limit,
             'offset': offset
         }
+        
+        Raises:
+            ValidationError: If parameters are invalid
+            Exception: If database operation fails
         """
-        try:
-            filter_type = validate_filter_type(filter_type)
-            
-            # Ensure cache is ready
-            self._ensure_cache_initialized()
-            
-            # Get total count first (fast with index)
-            status = None if filter_type == 'all' else filter_type
-            total = self.database.get_cache_count(status=status)
-            
-            # Get paginated posts
-            posts = self.database.get_cached_posts(
-                status=status,
-                limit=limit,
-                offset=offset,
-                sort_by='timestamp',
-                order='DESC'
-            )
-            
-            logger.info(f"Retrieved {len(posts)} posts (offset={offset}, total={total})")
-            
-            return {
-                'posts': posts,
-                'total': total,
-                'limit': limit,
-                'offset': offset
-            }
-        except Exception as e:
-            logger.error(f"Failed to get posts: {e}", exc_info=True)
-            return {
-                'posts': [],
-                'total': 0,
-                'limit': limit,
-                'offset': offset
-            }
+        filter_type = validate_filter_type(filter_type)
+        
+        # Ensure cache is ready
+        self._ensure_cache_initialized()
+        
+        # Get total count WITH filters
+        status = None if filter_type == 'all' else filter_type
+        total = self.database.get_cache_count(status=status, search_query=search_query)
+        
+        # Get paginated posts with SERVER-SIDE sort/filter
+        posts = self.database.get_cached_posts(
+            status=status,
+            limit=limit,
+            offset=offset,
+            sort_by=sort_by,
+            order=order,
+            search_query=search_query
+        )
+        
+        logger.info(f"Retrieved {len(posts)} posts (offset={offset}, total={total}, sort={sort_by} {order})")
+        
+        return {
+            'posts': posts,
+            'total': total,
+            'limit': limit,
+            'offset': offset
+        }
     
-    def get_posts_cached(self, status=None, limit=10000, offset=0, sort_by='timestamp', order='DESC'):
+    def get_posts_cached(
+        self, 
+        status=None, 
+        limit=10000, 
+        offset=0, 
+        sort_by='timestamp', 
+        order='DESC',
+        search_query=None
+    ):
         """
-        Direct cache access for streaming endpoint - OPTIMIZED
+        Direct cache access - now with search support
         """
         try:
             self._ensure_cache_initialized()
@@ -92,41 +112,40 @@ class PostService:
                 limit=limit,
                 offset=offset,
                 sort_by=sort_by,
-                order=order
+                order=order,
+                search_query=search_query
             )
         except Exception as e:
             logger.error(f"Failed to get cached posts: {e}", exc_info=True)
             return []
     
-    def get_total_count(self, filter_type: str = 'all') -> int:
-        """Get total count without loading posts - OPTIMIZED"""
+    def get_total_count(self, filter_type: str = 'all', search_query: Optional[str] = None) -> int:
+        """
+        Get total count with optional search filter
+        """
         try:
             filter_type = validate_filter_type(filter_type)
             self._ensure_cache_initialized()
             
             status = None if filter_type == 'all' else filter_type
-            return self.database.get_cache_count(status=status)
+            return self.database.get_cache_count(status=status, search_query=search_query)
         except Exception as e:
             logger.error(f"Failed to get total count: {e}", exc_info=True)
             return 0
     
     def save_post(self, post_id: int) -> bool:
-        """Save a pending post to archive - WITH INCREMENTAL CACHE UPDATE"""
+        """Save a pending post to archive"""
         post_id = validate_post_id(post_id)
         
-        # Load post data BEFORE moving
         post_data = self.file_manager.load_post_json(post_id, self.file_manager.temp_path)
         if not post_data:
             raise StorageError(f"Post {post_id} not found")
         
-        # Move the files
         success = self.file_manager.save_post_to_archive(post_id)
         
         if success:
-            # Update database status tracking
             self.database.set_post_status(post_id, "saved")
             
-            # INCREMENTAL CACHE UPDATE (instant!)
             from datetime import datetime
             date_folder = datetime.now().strftime("%m.%d.%Y")
             self.database.update_post_status(post_id, 'saved', date_folder)
@@ -139,23 +158,17 @@ class PostService:
         return success
     
     def discard_post(self, post_id: int) -> bool:
-        """Discard a pending post - WITH INCREMENTAL CACHE UPDATE"""
+        """Discard a pending post"""
         post_id = validate_post_id(post_id)
         
-        # Get post data before discarding to update tag counts
         post_data = self.file_manager.load_post_json(post_id, self.file_manager.temp_path)
         
-        # Delete the files
         success = self.file_manager.discard_post(post_id)
         
         if success:
-            # Update database status
             self.database.set_post_status(post_id, "discarded")
-            
-            # REMOVE FROM CACHE (instant!)
             self.database.remove_from_cache(post_id)
             
-            # Update tag counts
             if post_data and 'tags' in post_data:
                 self.database.update_tag_counts(post_data['tags'], increment=False)
             
@@ -167,23 +180,19 @@ class PostService:
         return success
     
     def delete_saved_post(self, post_id: int, date_folder: str) -> bool:
-        """Delete a saved post - WITH INCREMENTAL CACHE UPDATE"""
+        """Delete a saved post"""
         post_id = validate_post_id(post_id)
         date_folder = validate_date_folder(date_folder)
         
-        # Get post data before deleting
         import os
         folder_path = os.path.join(self.file_manager.save_path, date_folder)
         post_data = self.file_manager.load_post_json(post_id, folder_path)
         
-        # Delete the files
         success = self.file_manager.delete_saved_post(post_id, date_folder)
         
         if success:
-            # REMOVE FROM CACHE (instant!)
             self.database.remove_from_cache(post_id)
             
-            # Update tag counts
             if post_data and 'tags' in post_data:
                 self.database.update_tag_counts(post_data['tags'], increment=False)
             
@@ -198,7 +207,22 @@ class PostService:
         """Get file size for a post"""
         post_id = validate_post_id(post_id)
         return self.file_manager.get_file_size(post_id)
-
+    
+    def rebuild_cache(self) -> bool:
+        """
+        Rebuild post cache from files
+        Updates service state properly
+        """
+        try:
+            success = self.database.rebuild_cache_from_files(self.file_manager)
+            if success:
+                # Reset cache flag so it's considered initialized
+                self._cache_initialized = True
+                logger.info("Cache rebuilt successfully through service")
+            return success
+        except Exception as e:
+            logger.error(f"Cache rebuild failed: {e}", exc_info=True)
+            return False
 
 class ConfigService:
     """Service for configuration operations"""

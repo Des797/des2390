@@ -13,27 +13,37 @@ if (!API_ENDPOINTS.POST_COUNT) {
  * NEW: Get paginated posts directly from server
  * Only loads what's needed for current page
  */
-async function loadPostsPaginated(filter, limit, offset) {
-    console.log(`📄 loadPostsPaginated: filter=${filter}, limit=${limit}, offset=${offset}`);
-    
+async function loadPostsPaginated(filter, limit, offset, sortBy, order, searchQuery) {
+    console.log(`📄 loadPostsPaginated: filter=${filter}, limit=${limit}, offset=${offset}, sortBy=${sortBy}, order=${order}, search=${searchQuery}`);
+
     try {
-        const url = `/api/posts/paginated?filter=${filter}&limit=${limit}&offset=${offset}`;
+        const params = new URLSearchParams({
+            filter,
+            limit,
+            offset,
+            sort: sortBy,
+            order,
+        });
+        if (searchQuery) params.append('search', searchQuery);
+
+        const url = `/api/posts/paginated?${params.toString()}`;
         console.log(`🌐 Fetching: ${url}`);
-        
+
         const response = await fetch(url);
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}`);
         }
-        
+
         const data = await response.json();
         console.log(`✅ Received ${data.posts.length} posts, total: ${data.total}`);
-        
+
         return data;
     } catch (error) {
         console.error('❌ loadPostsPaginated failed:', error);
         throw error;
     }
 }
+
 
 /**
  * NEW: Get total count only (fast)

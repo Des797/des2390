@@ -88,6 +88,10 @@ def init_schema(core):
                 "CREATE INDEX IF NOT EXISTS idx_search_timestamp ON search_history(timestamp DESC)",
                 "CREATE INDEX IF NOT EXISTS idx_tag_history_post ON tag_history(post_id)",
                 "CREATE INDEX IF NOT EXISTS idx_tag_history_timestamp ON tag_history(timestamp DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_owner_text ON post_cache(owner COLLATE NOCASE)",
+                "CREATE INDEX IF NOT EXISTS idx_title_text ON post_cache(title COLLATE NOCASE)",
+                "CREATE INDEX IF NOT EXISTS idx_created_at ON post_cache(created_at DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_downloaded_at ON post_cache(downloaded_at DESC)",
             ]
 
             for idx_query in indexes:

@@ -3,6 +3,7 @@ import logging
 import json
 import time
 import os
+import traceback
 from flask import request, jsonify, render_template, session, redirect, url_for, send_from_directory, Response
 from functools import wraps
 from exceptions import ValidationError, PostNotFoundError, StorageError
@@ -464,18 +465,68 @@ def create_routes(app, config, services):
             'Cache-Control': 'no-cache',
             'X-Accel-Buffering': 'no'
         })
+        
+    @app.route("/api/posts/ids")
+    @login_required
+    def get_post_ids():
+        """
+        Get all post IDs matching filter/search (for bulk selection)
+        Returns only IDs, not full post data
+        """
+        try:
+            filter_type = request.args.get('filter', 'all')
+            search_query = request.args.get('search', '').strip()
+            
+            # Use database directly for efficiency
+            status = None if filter_type == 'all' else filter_type
+            
+            with post_service.database.core.get_connection() as conn:
+                query = "SELECT post_id FROM post_cache WHERE 1=1"
+                params = []
+                
+                if status:
+                    query += " AND status = ?"
+                    params.append(status)
+                
+                if search_query:
+                    search_term = f"%{search_query}%"
+                    query += " AND (owner LIKE ? OR title LIKE ? OR tags LIKE ?)"
+                    params.extend([search_term, search_term, search_term])
+                
+                cursor = conn.execute(query, params)
+                ids = [row[0] for row in cursor.fetchall()]
+            
+            return jsonify({
+                'ids': ids,
+                'count': len(ids)
+            })
+        except Exception as e:
+            logger.error(f"Error getting post IDs: {e}", exc_info=True)
+            return jsonify({"error": str(e)}), 500
 
     @app.route("/api/posts/count")
     @login_required
     def get_posts_count():
-        """Fast endpoint to get total count only - OPTIMIZED"""
+        """
+        Fast endpoint to get total count with optional search filter
+        
+        Query params:
+            - filter: 'all', 'pending', 'saved'
+            - search: text search query
+        """
         try:
             filter_type = request.args.get('filter', 'all')
-            total = post_service.get_total_count(filter_type)
+            search_query = request.args.get('search', '').strip()
+            
+            total = post_service.get_total_count(
+                filter_type, 
+                search_query if search_query else None
+            )
             
             return jsonify({
                 'total': total,
-                'filter': filter_type
+                'filter': filter_type,
+                'search': search_query
             })
         except Exception as e:
             logger.error(f"Error getting count: {e}", exc_info=True)
@@ -585,8 +636,6 @@ def create_routes(app, config, services):
                 "error": str(e),
                 "queued": True
             }), 202
-    
-    logger.info("Routes registered successfully")
     
     @app.route("/api/post/<int:post_id>/size")
     @login_required
@@ -753,38 +802,77 @@ def create_routes(app, config, services):
     @login_required
     def get_posts_paginated():
         """
-        OPTIMIZED: Server-side pagination - only returns what's needed
+        OPTIMIZED: Server-side pagination WITH sorting and text search
         
         Query params:
             - filter: 'all', 'pending', 'saved'
-            - limit: number of posts per page (default 42)
+            - limit: number of posts per page (default 42, max 1000)
             - offset: starting position (default 0)
+            - sort: sort column (timestamp, score, id, owner, width, height, tags, upload, download)
+            - order: 'asc' or 'desc' (default 'desc')
+            - search: text search query (searches owner, title, tags)
         
         Returns:
             {
-                'posts': [...],     # Only the requested page
-                'total': count,     # Total matching posts
+                'posts': [...],     # Only the requested page, sorted
+                'total': count,     # Total matching posts (with filters/search)
                 'limit': limit,
-                'offset': offset
+                'offset': offset,
+                'sort': sort,
+                'order': order
             }
         """
         try:
+            # Parse parameters
             filter_type = request.args.get('filter', 'all')
             limit = int(request.args.get('limit', 42))
             offset = int(request.args.get('offset', 0))
+            sort_by = request.args.get('sort', 'timestamp')
+            order = request.args.get('order', 'desc').upper()
+            search_query = request.args.get('search', '').strip()
             
             # Validate
             if limit < 1 or limit > 1000:
                 return jsonify({"error": "limit must be between 1 and 1000"}), 400
             if offset < 0:
                 return jsonify({"error": "offset cannot be negative"}), 400
+            if order not in ['ASC', 'DESC']:
+                return jsonify({"error": "order must be 'asc' or 'desc'"}), 400
             
-            logger.info(f"Paginated request: filter={filter_type}, limit={limit}, offset={offset}")
+            # Map frontend sort names to backend columns
+            sort_mapping = {
+                'download': 'downloaded_at',
+                'upload': 'created_at',
+                'id': 'post_id',
+                'tags': 'tags',  # Will be handled specially (tag count)
+                'size': 'timestamp'  # Size requires file I/O, fallback to timestamp
+            }
+            sort_by = sort_mapping.get(sort_by, sort_by)
             
-            # Get data using existing service method
-            result = post_service.get_posts(filter_type, limit, offset)
+            logger.info(
+                f"Paginated request: filter={filter_type}, limit={limit}, offset={offset}, "
+                f"sort={sort_by} {order}, search='{search_query}'"
+            )
             
-            logger.info(f"Returning {len(result['posts'])} posts, total={result['total']}")
+            # Get data using service with ALL parameters
+            result = post_service.get_posts(
+                filter_type=filter_type,
+                limit=limit,
+                offset=offset,
+                sort_by=sort_by,
+                order=order,
+                search_query=search_query if search_query else None
+            )
+            
+            # Add sort/search info to response
+            result['sort'] = sort_by
+            result['order'] = order.lower()
+            result['search'] = search_query
+            
+            logger.info(
+                f"Returning {len(result['posts'])} posts, total={result['total']} "
+                f"(sorted by {sort_by} {order})"
+            )
             
             return jsonify(result)
             
