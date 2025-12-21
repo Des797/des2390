@@ -170,8 +170,18 @@
                                 <option value="saved">Saved Only</option>
                             </select>
                             <span class="total-results" id="postsTotalResults"></span>
-                            <div class="search-with-button">
-                                <input type="text" id="postsSearchInput" placeholder="Search by owner, title, or tags (server-side text search)">
+                        <div class="search-with-button">
+                                <input type="text" id="postsSearchInput" placeholder="Advanced Search: alice, (red | blue) -cat, owner:bob, score:>100, type:mp4, width:>1920, rating:explicit" title="Examples:
+• Simple: red, alice
+• OR: red | blue, (cat | dog) fox  
+• NOT: -unwanted, !exclude
+• Owner: owner:alice, user:bob
+• Score: score:>100, score:>=50
+• Type: type:mp4, ext:webm
+• Size: width:>1920, height:<1080
+• Rating: rating:explicit
+• Wildcards: red*, *_girl, owner:alice*
+• Complex: (red | blue) -cat owner:alice score:>100">
                                 <button class="btn-primary search-btn" id="postsSearchButton" title="Search">🔍</button>
                             </div>
                             <select id="postsSort">

@@ -2,6 +2,7 @@ import json
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 import logging
+from query_translator import get_query_translator
 
 logger = logging.getLogger(__name__)
 
@@ -77,7 +78,6 @@ class PostCacheRepository:
         except Exception as e:
             logger.error(f"Failed to update post {post_id} status: {e}", exc_info=True)
             return False
-
     def get_cached_posts(
         self, 
         status: Optional[str] = None,
@@ -88,7 +88,7 @@ class PostCacheRepository:
         search_query: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
-        Get posts from cache with SERVER-SIDE pagination, sorting, and text search
+        Get posts from cache with SERVER-SIDE pagination, sorting, and ADVANCED query search
         
         Args:
             status: Filter by status (pending/saved/None for all)
@@ -96,47 +96,45 @@ class PostCacheRepository:
             offset: Starting position
             sort_by: Column to sort by (timestamp, score, post_id, owner, width, height, created_at)
             order: Sort order (ASC/DESC)
-            search_query: Text search query (searches owner, title, tags)
+            search_query: Advanced query with full frontend syntax support
         """
         try:
+            translator = get_query_translator()
+            
             with self.core.get_connection() as conn:
-                # Base query
-                query = "SELECT * FROM post_cache WHERE 1=1"
-                params = []
-
-                # Status filter
-                if status:
-                    query += " AND status = ?"
-                    params.append(status)
-
-                # Text search filter (searches owner, title, and tags)
+                # Translate advanced query to SQL
                 if search_query and search_query.strip():
-                    search_term = f"%{search_query}%"
-                    query += " AND (owner LIKE ? OR title LIKE ? OR tags LIKE ?)"
-                    params.extend([search_term, search_term, search_term])
+                    logger.info(f"[PostCacheRepository] Using QueryTranslator for search_query: '{search_query}'")
+                    where_clause, params = translator.translate(search_query, status)
+                    query = f"SELECT * FROM post_cache WHERE {where_clause}"
+                else:
+                    # No search query
+                    if status:
+                        query = "SELECT * FROM post_cache WHERE status = ?"
+                        params = [status]
+                    else:
+                        query = "SELECT * FROM post_cache WHERE 1=1"
+                        params = []
 
                 # Validate sort column
                 valid_sorts = {
                     'timestamp': 'timestamp',
-                    'download': 'downloaded_at',  # Alias
+                    'download': 'downloaded_at',
                     'upload': 'created_at',
                     'score': 'score',
                     'post_id': 'post_id',
-                    'id': 'post_id',  # Alias
+                    'id': 'post_id',
                     'owner': 'owner',
                     'width': 'width',
                     'height': 'height',
-                    'tags': 'tags'  # Will sort by tag count
+                    'tags': 'tags'
                 }
                 
                 sort_column = valid_sorts.get(sort_by, 'timestamp')
-                
-                # Validate order
                 order = 'DESC' if order.upper() == 'DESC' else 'ASC'
                 
                 # Special handling for tag count sorting
                 if sort_by == 'tags':
-                    # SQLite doesn't have array length, so we count commas in JSON
                     query += f" ORDER BY (length(tags) - length(replace(tags, ',', ''))) {order}"
                 else:
                     query += f" ORDER BY {sort_column} {order}"
@@ -145,7 +143,7 @@ class PostCacheRepository:
                 query += " LIMIT ? OFFSET ?"
                 params.extend([limit, offset])
 
-                logger.debug(f"Query: {query}")
+                logger.debug(f"Advanced Query SQL: {query}")
                 logger.debug(f"Params: {params}")
 
                 cursor = conn.execute(query, params)

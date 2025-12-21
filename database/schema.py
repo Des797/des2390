@@ -64,6 +64,25 @@ def init_schema(core):
                 duration REAL
             )""")
             
+            c.execute("""CREATE VIRTUAL TABLE IF NOT EXISTS post_search_fts 
+                         USING fts5(post_id UNINDEXED, owner, title, tags, 
+                                   content='post_cache', content_rowid='post_id')""")
+            
+            c.execute("""CREATE TRIGGER IF NOT EXISTS post_cache_ai AFTER INSERT ON post_cache BEGIN
+                INSERT INTO post_search_fts(post_id, owner, title, tags) 
+                VALUES (new.post_id, new.owner, new.title, new.tags);
+            END""")
+            
+            c.execute("""CREATE TRIGGER IF NOT EXISTS post_cache_ad AFTER DELETE ON post_cache BEGIN
+                DELETE FROM post_search_fts WHERE post_id = old.post_id;
+            END""")
+            
+            c.execute("""CREATE TRIGGER IF NOT EXISTS post_cache_au AFTER UPDATE ON post_cache BEGIN
+                DELETE FROM post_search_fts WHERE post_id = old.post_id;
+                INSERT INTO post_search_fts(post_id, owner, title, tags) 
+                VALUES (new.post_id, new.owner, new.title, new.tags);
+            END""")
+            
             # Add duration column if it doesn't exist (migration)
             try:
                 c.execute("SELECT duration FROM post_cache LIMIT 1")

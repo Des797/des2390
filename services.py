@@ -1,4 +1,4 @@
-"""Business logic layer - OPTIMIZED with server-side sorting/filtering"""
+"""Business logic layer - OPTIMIZED with server-side advanced query parsing"""
 import logging
 from typing import Dict, List, Any, Optional
 from exceptions import PostNotFoundError, ValidationError, StorageError
