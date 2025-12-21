@@ -1,10 +1,55 @@
-// API Functions - OPTIMIZED
+// API Functions - TRUE PAGINATION (Don't load everything!)
 import { apiCall } from './utils.js';
 import { API_ENDPOINTS } from './constants.js';
+
+console.log('🚀 api.js loading...');
 
 // Add missing constant
 if (!API_ENDPOINTS.POST_COUNT) {
     API_ENDPOINTS.POST_COUNT = '/api/posts/count';
+}
+
+/**
+ * NEW: Get paginated posts directly from server
+ * Only loads what's needed for current page
+ */
+async function loadPostsPaginated(filter, limit, offset) {
+    console.log(`📄 loadPostsPaginated: filter=${filter}, limit=${limit}, offset=${offset}`);
+    
+    try {
+        const url = `/api/posts/paginated?filter=${filter}&limit=${limit}&offset=${offset}`;
+        console.log(`🌐 Fetching: ${url}`);
+        
+        const response = await fetch(url);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log(`✅ Received ${data.posts.length} posts, total: ${data.total}`);
+        
+        return data;
+    } catch (error) {
+        console.error('❌ loadPostsPaginated failed:', error);
+        throw error;
+    }
+}
+
+/**
+ * NEW: Get total count only (fast)
+ */
+async function getTotalCount(filter) {
+    console.log(`🔢 getTotalCount: filter=${filter}`);
+    
+    try {
+        const response = await fetch(`/api/posts/count?filter=${filter}`);
+        const data = await response.json();
+        console.log(`✅ Total count: ${data.total}`);
+        return data.total;
+    } catch (error) {
+        console.error('❌ getTotalCount failed:', error);
+        throw error;
+    }
 }
 
 // Config Management
@@ -27,134 +72,6 @@ async function loadTagCounts() {
 
 async function rebuildTagCounts() {
     return await apiCall(API_ENDPOINTS.REBUILD_TAG_COUNTS, { method: 'POST' });
-}
-
-/**
- * OPTIMIZED: Get total count first (fast), then stream if needed
- */
-async function loadPostsOptimized(filter, onProgress) {
-    try {
-        // Step 1: Get total count (instant)
-        if (onProgress) {
-            onProgress({ type: 'status', message: 'Counting posts...' });
-        }
-        
-        const countResponse = await fetch(`/api/posts/count?filter=${filter}`);
-        const countData = await countResponse.json();
-        const total = countData.total;
-        
-        if (onProgress) {
-            onProgress({ 
-                type: 'count', 
-                total: total,
-                message: `Found ${total} posts`
-            });
-        }
-        
-        // Step 2: If small dataset, fetch all at once
-        if (total <= 1000) {
-            if (onProgress) {
-                onProgress({ type: 'status', message: `Loading ${total} posts...` });
-            }
-            
-            const response = await fetch(`/api/posts?filter=${filter}`);
-            const data = await response.json();
-            
-            if (onProgress) {
-                onProgress({ type: 'complete', total: data.posts.length });
-            }
-            
-            return data.posts;
-        }
-        
-        // Step 3: Large dataset - use streaming
-        return await loadPostsStreaming(filter, onProgress, total);
-        
-    } catch (error) {
-        console.error('Optimized load failed:', error);
-        throw error;
-    }
-}
-
-/**
- * Load posts with streaming progress updates - OPTIMIZED
- */
-async function loadPostsStreaming(filter, onProgress, knownTotal = null) {
-    return new Promise((resolve, reject) => {
-        const eventSource = new EventSource(`/api/posts/stream?filter=${filter}`);
-        const posts = [];
-        let total = knownTotal;
-        
-        eventSource.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-            
-            switch(data.type) {
-                case 'status':
-                    if (onProgress) onProgress({ type: 'status', message: data.message });
-                    break;
-                    
-                case 'chunk':
-                    // Received a chunk of posts
-                    posts.push(...data.posts);
-                    total = data.total;
-                    
-                    if (onProgress) {
-                        onProgress({
-                            type: 'progress',
-                            loaded: data.progress,
-                            total: data.total,
-                            percent: Math.round((data.progress / data.total) * 100)
-                        });
-                    }
-                    break;
-                    
-                case 'complete':
-                    // All posts loaded
-                    eventSource.close();
-                    if (onProgress) {
-                        onProgress({ 
-                            type: 'complete', 
-                            total: data.total,
-                            time: data.time 
-                        });
-                    }
-                    resolve(posts);
-                    break;
-                    
-                case 'error':
-                    eventSource.close();
-                    reject(new Error(data.message));
-                    break;
-            }
-        };
-        
-        eventSource.onerror = (error) => {
-            eventSource.close();
-            reject(error);
-        };
-        
-        // Timeout after 5 minutes
-        setTimeout(() => {
-            eventSource.close();
-            reject(new Error('Request timed out'));
-        }, 300000);
-    });
-}
-
-/**
- * Smart loader with automatic optimization
- */
-async function loadPostsSmart(filter, onProgress) {
-    try {
-        // Always use optimized loader
-        return await loadPostsOptimized(filter, onProgress);
-        
-    } catch (error) {
-        console.warn('Optimized load failed, falling back:', error);
-        
-        // Final fallback to original endpoint
-        return await loadPosts(filter);
-    }
 }
 
 // Search History
@@ -184,8 +101,9 @@ async function getStatus() {
     return await apiCall(API_ENDPOINTS.STATUS);
 }
 
-// Posts - LEGACY (kept for compatibility)
+// Posts - LEGACY (kept for compatibility, but DON'T USE for large datasets)
 async function loadPosts(filter = 'all') {
+    console.warn('⚠️ loadPosts (LEGACY) called - this loads ALL posts and is slow for large datasets');
     return await apiCall(`${API_ENDPOINTS.POSTS}?filter=${filter}`);
 }
 
@@ -220,6 +138,13 @@ async function getAutocompleteTags(query) {
     return await apiCall(`${API_ENDPOINTS.AUTOCOMPLETE}?q=${encodeURIComponent(query)}`);
 }
 
+console.log('✅ api.js loaded successfully');
+console.log('📦 Exported functions:', {
+    loadPostsPaginated: typeof loadPostsPaginated,
+    getTotalCount: typeof getTotalCount,
+    loadPosts: typeof loadPosts
+});
+
 export {
     loadConfig,
     saveConfigData,
@@ -236,8 +161,7 @@ export {
     deletePost,
     getPostSize,
     getAutocompleteTags,
-    loadPostsStreaming,
-    loadPostsOptimized,
-    loadPostsSmart,
-    getVideoDuration
+    getVideoDuration,
+    loadPostsPaginated,  // NEW
+    getTotalCount        // NEW
 };

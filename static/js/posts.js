@@ -1,15 +1,14 @@
 // Posts Management - FULLY OPTIMIZED
 import { state, updateURLState } from './state.js';
 import { showNotification, applySearchFilter } from './utils.js';
-import { 
-    loadPosts as apiLoadPosts,
-    loadPostsSmart,
-    loadTagCounts, 
-    savePost as apiSavePost, 
-    discardPost as apiDiscardPost, 
-    deletePost as apiDeletePost, 
-    getPostSize,
-    getVideoDuration
+import {
+    loadPostsPaginated,
+    getTotalCount,
+    loadTagCounts,
+    savePost as apiSavePost,
+    discardPost as apiDiscardPost,
+    deletePost as apiDeletePost,
+    getPostSize
 } from './api.js';
 import { renderPost, renderPaginationButtons, setupVideoPreviewListeners } from './posts_renderer.js';
 import { attachPostEventListeners, setupPaginationListeners, setupMediaErrorHandlers } from './event_handlers.js';
@@ -317,12 +316,15 @@ async function renderPostsOptimized(grid, posts, sortBy, searchQuery) {
 
 // Main load function with status operator support
 async function loadPosts(updateURL = true) {
+    console.log('🎬 loadPosts() called with TRUE PAGINATION');
+    
     const grid = document.getElementById(ELEMENT_IDS.POSTS_GRID);
     const startTime = Date.now();
     
     try {
         // Load tag counts if needed
         if (!state.tagCounts || Object.keys(state.tagCounts).length === 0) {
+            console.log('📋 Loading tag counts...');
             grid.innerHTML = '<p style="color: #10b981; text-align: center; grid-column: 1/-1; font-size: 18px;">⏳ Loading tag counts...</p>';
             state.tagCounts = await loadTagCounts();
         }
@@ -330,58 +332,48 @@ async function loadPosts(updateURL = true) {
         // Check for status: operator in search
         const searchQuery = state.postsSearch;
         const { status: statusFromSearch, cleanedQuery } = extractStatusOperator(searchQuery);
-        
-        // Apply status from search or use filter
         const effectiveStatus = statusFromSearch || state.postsStatusFilter;
+        
+        console.log('🔍 Filter:', effectiveStatus, 'Search:', cleanedQuery);
         
         // Disable filter dropdown if status: in search
         const filterDropdown = document.getElementById(ELEMENT_IDS.POSTS_STATUS_FILTER);
         if (statusFromSearch) {
             filterDropdown.disabled = true;
             filterDropdown.style.opacity = '0.5';
-            filterDropdown.title = 'Status filter overridden by search query';
         } else {
             filterDropdown.disabled = false;
             filterDropdown.style.opacity = '1';
-            filterDropdown.title = '';
         }
         
-        // Clear search error display
         hideSearchError();
         
-        // OPTIMIZED: Load posts with progress tracking
         grid.innerHTML = '<p style="color: #10b981; text-align: center; grid-column: 1/-1; font-size: 18px;">⏳ Counting posts...</p>';
         
-        let posts;
-        let loadingMessage = grid.querySelector('p');
+        // Step 1: Get total count (instant!)
+        const total = await getTotalCount(effectiveStatus);
+        console.log(`✅ Total: ${total} posts`);
         
-        try {
-            posts = await loadPostsSmart(effectiveStatus, (progress) => {
-                if (progress.type === 'count') {
-                    loadingMessage.innerHTML = `⏳ Found ${progress.total} posts. Loading...`;
-                    
-                    // Update total immediately
-                    document.getElementById(ELEMENT_IDS.POSTS_TOTAL_RESULTS).textContent = `Total: ${progress.total} posts`;
-                } 
-                else if (progress.type === 'status') {
-                    loadingMessage.innerHTML = `⏳ ${progress.message}`;
-                } 
-                else if (progress.type === 'progress') {
-                    loadingMessage.innerHTML = `⏳ Loading posts...<br><span style="font-size: 14px; color: #94a3b8;">${progress.loaded} / ${progress.total} (${progress.percent}%)</span>`;
-                }
-                else if (progress.type === 'complete') {
-                    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-                    loadingMessage.innerHTML = `✅ Loaded ${progress.total} posts in ${elapsed}s`;
-                }
-            });
-        } catch (streamError) {
-            console.warn('Smart loading failed, using fallback:', streamError);
-            loadingMessage.innerHTML = '⏳ Loading posts (fallback mode)...';
-            posts = await apiLoadPosts(effectiveStatus);
-        }
+        document.getElementById(ELEMENT_IDS.POSTS_TOTAL_RESULTS).textContent = `Total: ${total} posts`;
+        
+        // Step 2: Get posts per page setting
+        let perPage = parseInt(document.getElementById(ELEMENT_IDS.POSTS_PER_PAGE).value);
+        if (isNaN(perPage) || perPage < 1) perPage = 42;
+        if (perPage > 200) perPage = 200;
+        
+        // Step 3: Calculate offset for current page
+        const offset = (state.postsPage - 1) * perPage;
+        
+        console.log(`📄 Loading page ${state.postsPage}: offset=${offset}, limit=${perPage}`);
+        
+        grid.innerHTML = `<p style="color: #10b981; text-align: center; grid-column: 1/-1; font-size: 18px;">⏳ Loading page ${state.postsPage}...</p>`;
+        
+        // Step 4: Load ONLY the current page from server
+        const result = await loadPostsPaginated(effectiveStatus, perPage, offset);
+        let posts = result.posts;
         
         const loadTime = ((Date.now() - startTime) / 1000).toFixed(1);
-        console.log(`Loaded ${posts.length} posts in ${loadTime}s`);
+        console.log(`✅ Loaded page in ${loadTime}s`);
         
         // Fix missing file_type
         posts = posts.map(post => {
@@ -393,61 +385,48 @@ async function loadPosts(updateURL = true) {
             return post;
         });
         
-        const sortBy = state.postsSortBy;
-        const order = state.postsSortOrder;
-        let perPage = parseInt(document.getElementById(ELEMENT_IDS.POSTS_PER_PAGE).value);
-        
-        if (isNaN(perPage) || perPage < PAGINATION.MIN_PER_PAGE) {
-            perPage = PAGINATION.MIN_PER_PAGE;
-            document.getElementById(ELEMENT_IDS.POSTS_PER_PAGE).value = perPage;
-        } else if (perPage > PAGINATION.MAX_PER_PAGE) {
-            perPage = PAGINATION.MAX_PER_PAGE;
-            document.getElementById(ELEMENT_IDS.POSTS_PER_PAGE).value = perPage;
-        }
-        
-        // Apply search filter (using cleaned query without status:)
+        // Apply client-side search filter if needed
         if (cleanedQuery) {
-            grid.innerHTML = `<p style="color: #10b981; text-align: center; grid-column: 1/-1; font-size: 18px;">⏳ Filtering ${posts.length} posts...</p>`;
+            console.log('🔍 Applying search filter:', cleanedQuery);
             const filterResult = applySearchFilterWithErrors(posts, cleanedQuery);
             posts = filterResult.posts;
             
-            // Show errors if any
             if (filterResult.errors.length > 0) {
                 showSearchError(filterResult.errors.join(', '));
             }
         }
         
-        // Sort
-        if (sortBy === 'size' || posts.length > 100) {
-            grid.innerHTML = `<p style="color: #10b981; text-align: center; grid-column: 1/-1; font-size: 18px;">⏳ Sorting ${posts.length} posts...</p>`;
+        // Sort client-side (only current page)
+        const sortBy = state.postsSortBy;
+        const order = state.postsSortOrder;
+        
+        if (sortBy !== 'download') {  // download is default sort from server
+            console.log('🔃 Sorting by', sortBy);
+            posts = await sortPosts(posts, sortBy, order);
         }
         
-        posts = await sortPosts(posts, sortBy, order);
+        // Store posts for modal navigation
         state.allPosts = posts;
-        
         rebuildModalIndexCache();
         
-        const start = (state.postsPage - 1) * perPage;
-        const end = start + perPage;
-        const pagePosts = posts.slice(start, end);
-        
-        if (pagePosts.length === 0) {
+        if (posts.length === 0) {
+            console.log('⚠️ No posts to display');
             destroyVirtualScroll();
             grid.innerHTML = '<p style="color: #64748b; text-align: center; grid-column: 1/-1;">No posts</p>';
         } else {
-            const useVirtual = useVirtualScroll(pagePosts, grid, sortBy, cleanedQuery);
+            console.log('🎨 Rendering', posts.length, 'posts...');
             
-            if (!useVirtual) {
-                grid.innerHTML = `<p style="color: #10b981; text-align: center; grid-column: 1/-1; font-size: 18px;">⏳ Rendering ${pagePosts.length} posts...</p>`;
-                await renderPostsOptimized(grid, pagePosts, sortBy, cleanedQuery);
-            }
+            grid.innerHTML = `<p style="color: #10b981; text-align: center; grid-column: 1/-1; font-size: 18px;">⏳ Rendering ${posts.length} posts...</p>`;
+            await renderPostsOptimized(grid, posts, sortBy, cleanedQuery);
+            
+            console.log('✅ Rendering complete');
         }
         
         const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
-        console.log(`Total load time: ${totalTime}s`);
+        console.log(`✅ Total time: ${totalTime}s`);
         
-        document.getElementById(ELEMENT_IDS.POSTS_TOTAL_RESULTS).textContent = `Total: ${posts.length} posts`;
-        renderPagination(posts.length, perPage, state.postsPage);
+        // Update pagination (use actual total, not filtered count)
+        renderPagination(total, perPage, state.postsPage);
         updateBulkControls();
         updateSortOrderButton();
         
@@ -462,17 +441,17 @@ async function loadPosts(updateURL = true) {
             });
         }
         
-        if (pagePosts.length > 0) {
-            // Fetch durations in background
+        if (posts.length > 0) {
             requestAnimationFrame(() => {
                 updateVideoDurationBadges();
             });
         }
     } catch (error) {
         const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
+        console.error(`❌ loadPosts failed after ${totalTime}s:`, error);
+        
         showNotification('Failed to load posts', 'error');
-        console.error(`Load failed after ${totalTime}s:`, error);
-        grid.innerHTML = '<p style="color: #ef4444; text-align: center; grid-column: 1/-1;">Failed to load posts</p>';
+        grid.innerHTML = '<p style="color: #ef4444; text-align: center; grid-column: 1/-1;">Failed to load posts. Check console for details.</p>';
     }
 }
 

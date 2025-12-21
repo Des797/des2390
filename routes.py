@@ -748,3 +748,46 @@ def create_routes(app, config, services):
         return send_from_directory(folder_path, filename)
     
     logger.info("Routes registered successfully")
+    
+    @app.route("/api/posts/paginated")
+    @login_required
+    def get_posts_paginated():
+        """
+        OPTIMIZED: Server-side pagination - only returns what's needed
+        
+        Query params:
+            - filter: 'all', 'pending', 'saved'
+            - limit: number of posts per page (default 42)
+            - offset: starting position (default 0)
+        
+        Returns:
+            {
+                'posts': [...],     # Only the requested page
+                'total': count,     # Total matching posts
+                'limit': limit,
+                'offset': offset
+            }
+        """
+        try:
+            filter_type = request.args.get('filter', 'all')
+            limit = int(request.args.get('limit', 42))
+            offset = int(request.args.get('offset', 0))
+            
+            # Validate
+            if limit < 1 or limit > 1000:
+                return jsonify({"error": "limit must be between 1 and 1000"}), 400
+            if offset < 0:
+                return jsonify({"error": "offset cannot be negative"}), 400
+            
+            logger.info(f"Paginated request: filter={filter_type}, limit={limit}, offset={offset}")
+            
+            # Get data using existing service method
+            result = post_service.get_posts(filter_type, limit, offset)
+            
+            logger.info(f"Returning {len(result['posts'])} posts, total={result['total']}")
+            
+            return jsonify(result)
+            
+        except Exception as e:
+            logger.error(f"Paginated endpoint error: {e}", exc_info=True)
+            return jsonify({"error": str(e)}), 500
