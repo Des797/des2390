@@ -1,6 +1,11 @@
-// API Functions
+// API Functions - OPTIMIZED
 import { apiCall } from './utils.js';
 import { API_ENDPOINTS } from './constants.js';
+
+// Add missing constant
+if (!API_ENDPOINTS.POST_COUNT) {
+    API_ENDPOINTS.POST_COUNT = '/api/posts/count';
+}
 
 // Config Management
 async function loadConfig() {
@@ -25,26 +30,74 @@ async function rebuildTagCounts() {
 }
 
 /**
- * Load posts with streaming progress updates
- * This is much faster for large datasets
+ * OPTIMIZED: Get total count first (fast), then stream if needed
  */
-async function loadPostsStreaming(filter, onProgress) {
+async function loadPostsOptimized(filter, onProgress) {
+    try {
+        // Step 1: Get total count (instant)
+        if (onProgress) {
+            onProgress({ type: 'status', message: 'Counting posts...' });
+        }
+        
+        const countResponse = await fetch(`/api/posts/count?filter=${filter}`);
+        const countData = await countResponse.json();
+        const total = countData.total;
+        
+        if (onProgress) {
+            onProgress({ 
+                type: 'count', 
+                total: total,
+                message: `Found ${total} posts`
+            });
+        }
+        
+        // Step 2: If small dataset, fetch all at once
+        if (total <= 1000) {
+            if (onProgress) {
+                onProgress({ type: 'status', message: `Loading ${total} posts...` });
+            }
+            
+            const response = await fetch(`/api/posts?filter=${filter}`);
+            const data = await response.json();
+            
+            if (onProgress) {
+                onProgress({ type: 'complete', total: data.posts.length });
+            }
+            
+            return data.posts;
+        }
+        
+        // Step 3: Large dataset - use streaming
+        return await loadPostsStreaming(filter, onProgress, total);
+        
+    } catch (error) {
+        console.error('Optimized load failed:', error);
+        throw error;
+    }
+}
+
+/**
+ * Load posts with streaming progress updates - OPTIMIZED
+ */
+async function loadPostsStreaming(filter, onProgress, knownTotal = null) {
     return new Promise((resolve, reject) => {
         const eventSource = new EventSource(`/api/posts/stream?filter=${filter}`);
         const posts = [];
+        let total = knownTotal;
         
         eventSource.onmessage = (event) => {
             const data = JSON.parse(event.data);
             
             switch(data.type) {
                 case 'status':
-                    // Progress message
                     if (onProgress) onProgress({ type: 'status', message: data.message });
                     break;
                     
                 case 'chunk':
                     // Received a chunk of posts
                     posts.push(...data.posts);
+                    total = data.total;
+                    
                     if (onProgress) {
                         onProgress({
                             type: 'progress',
@@ -58,7 +111,13 @@ async function loadPostsStreaming(filter, onProgress) {
                 case 'complete':
                     // All posts loaded
                     eventSource.close();
-                    if (onProgress) onProgress({ type: 'complete', total: data.total });
+                    if (onProgress) {
+                        onProgress({ 
+                            type: 'complete', 
+                            total: data.total,
+                            time: data.time 
+                        });
+                    }
                     resolve(posts);
                     break;
                     
@@ -83,35 +142,15 @@ async function loadPostsStreaming(filter, onProgress) {
 }
 
 /**
- * Load posts with optimized backend (faster but no streaming)
- */
-async function loadPostsOptimized(filter) {
-    const response = await fetch(`/api/posts/optimized?filter=${filter}`);
-    if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`);
-    }
-    return await response.json();
-}
-
-/**
- * Load posts with automatic fallback
- * Tries streaming first, falls back to optimized, then original
+ * Smart loader with automatic optimization
  */
 async function loadPostsSmart(filter, onProgress) {
     try {
-        // Try streaming first if progress callback provided
-        if (onProgress && 'EventSource' in window) {
-            return await loadPostsStreaming(filter, onProgress);
-        }
+        // Always use optimized loader
+        return await loadPostsOptimized(filter, onProgress);
         
-        // Fall back to optimized endpoint
-        if (onProgress) {
-            onProgress({ type: 'status', message: 'Loading posts...' });
-        }
-        return await loadPostsOptimized(filter);
-        
-    } catch (streamError) {
-        console.warn('Streaming failed, falling back to standard API:', streamError);
+    } catch (error) {
+        console.warn('Optimized load failed, falling back:', error);
         
         // Final fallback to original endpoint
         return await loadPosts(filter);
@@ -145,7 +184,7 @@ async function getStatus() {
     return await apiCall(API_ENDPOINTS.STATUS);
 }
 
-// Posts
+// Posts - LEGACY (kept for compatibility)
 async function loadPosts(filter = 'all') {
     return await apiCall(`${API_ENDPOINTS.POSTS}?filter=${filter}`);
 }

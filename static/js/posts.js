@@ -1,7 +1,16 @@
 // Posts Management - FULLY OPTIMIZED
 import { state, updateURLState } from './state.js';
 import { showNotification, applySearchFilter } from './utils.js';
-import { loadPosts as apiLoadPosts, loadPostsStreaming, savePost as apiSavePost, discardPost as apiDiscardPost, deletePost as apiDeletePost, getPostSize, loadTagCounts } from './api.js';
+import { 
+    loadPosts as apiLoadPosts,
+    loadPostsSmart,
+    loadTagCounts, 
+    savePost as apiSavePost, 
+    discardPost as apiDiscardPost, 
+    deletePost as apiDeletePost, 
+    getPostSize,
+    getVideoDuration
+} from './api.js';
 import { renderPost, renderPaginationButtons, setupVideoPreviewListeners } from './posts_renderer.js';
 import { attachPostEventListeners, setupPaginationListeners, setupMediaErrorHandlers } from './event_handlers.js';
 import { useVirtualScroll, destroyVirtualScroll } from './virtual_scroll.js';
@@ -340,24 +349,34 @@ async function loadPosts(updateURL = true) {
         // Clear search error display
         hideSearchError();
         
-        // Load posts
-        grid.innerHTML = '<p style="color: #10b981; text-align: center; grid-column: 1/-1; font-size: 18px;">⏳ Loading posts...</p>';
+        // OPTIMIZED: Load posts with progress tracking
+        grid.innerHTML = '<p style="color: #10b981; text-align: center; grid-column: 1/-1; font-size: 18px;">⏳ Counting posts...</p>';
         
         let posts;
+        let loadingMessage = grid.querySelector('p');
+        
         try {
-            if (window.EventSource) {
-                posts = await loadPostsStreaming(effectiveStatus, (progress) => {
-                    if (progress.type === 'status') {
-                        grid.innerHTML = `<p style="color: #10b981; text-align: center; grid-column: 1/-1; font-size: 18px;">⏳ ${progress.message}</p>`;
-                    } else if (progress.type === 'progress') {
-                        grid.innerHTML = `<p style="color: #10b981; text-align: center; grid-column: 1/-1; font-size: 18px;">⏳ Loading posts...<br><span style="font-size: 14px; color: #94a3b8;">${progress.loaded} / ${progress.total} (${progress.percent}%)</span></p>`;
-                    }
-                });
-            } else {
-                posts = await apiLoadPosts(effectiveStatus);
-            }
+            posts = await loadPostsSmart(effectiveStatus, (progress) => {
+                if (progress.type === 'count') {
+                    loadingMessage.innerHTML = `⏳ Found ${progress.total} posts. Loading...`;
+                    
+                    // Update total immediately
+                    document.getElementById(ELEMENT_IDS.POSTS_TOTAL_RESULTS).textContent = `Total: ${progress.total} posts`;
+                } 
+                else if (progress.type === 'status') {
+                    loadingMessage.innerHTML = `⏳ ${progress.message}`;
+                } 
+                else if (progress.type === 'progress') {
+                    loadingMessage.innerHTML = `⏳ Loading posts...<br><span style="font-size: 14px; color: #94a3b8;">${progress.loaded} / ${progress.total} (${progress.percent}%)</span>`;
+                }
+                else if (progress.type === 'complete') {
+                    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                    loadingMessage.innerHTML = `✅ Loaded ${progress.total} posts in ${elapsed}s`;
+                }
+            });
         } catch (streamError) {
-            console.warn('Streaming failed:', streamError);
+            console.warn('Smart loading failed, using fallback:', streamError);
+            loadingMessage.innerHTML = '⏳ Loading posts (fallback mode)...';
             posts = await apiLoadPosts(effectiveStatus);
         }
         
@@ -444,14 +463,6 @@ async function loadPosts(updateURL = true) {
         }
         
         if (pagePosts.length > 0) {
-            // Render first, then fetch durations
-            const useVirtual = useVirtualScroll(pagePosts, grid, sortBy, cleanedQuery);
-            
-            if (!useVirtual) {
-                grid.innerHTML = `<p style="color: #10b981; text-align: center; grid-column: 1/-1; font-size: 18px;">⏳ Rendering ${pagePosts.length} posts...</p>`;
-                await renderPostsOptimized(grid, pagePosts, sortBy, cleanedQuery);
-            }
-            
             // Fetch durations in background
             requestAnimationFrame(() => {
                 updateVideoDurationBadges();

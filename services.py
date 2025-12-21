@@ -1,4 +1,4 @@
-"""Business logic layer between routes and data - FIXED"""
+"""Business logic layer between routes and data - OPTIMIZED"""
 import logging
 from typing import Dict, List, Any, Optional
 from exceptions import PostNotFoundError, ValidationError, StorageError
@@ -31,40 +31,58 @@ class PostService:
                 self._cache_initialized = True
             except Exception as e:
                 logger.error(f"Failed to initialize cache: {e}", exc_info=True)
-                # Don't set _cache_initialized so it can retry
                 raise
     
-    def get_posts(self, filter_type: str = 'all') -> List[Dict[str, Any]]:
+    def get_posts(self, filter_type: str = 'all', limit: int = 10000, offset: int = 0) -> Dict[str, Any]:
         """
-        Get posts - uses cache for speed!
-        Returns empty list on error instead of crashing
+        Get posts with pagination - OPTIMIZED
+        
+        Returns: {
+            'posts': [...],
+            'total': count,
+            'limit': limit,
+            'offset': offset
+        }
         """
         try:
             filter_type = validate_filter_type(filter_type)
             
-            # Ensure cache is ready (only runs once)
+            # Ensure cache is ready
             self._ensure_cache_initialized()
             
-            # Get from cache (FAST!)
+            # Get total count first (fast with index)
             status = None if filter_type == 'all' else filter_type
+            total = self.database.get_cache_count(status=status)
+            
+            # Get paginated posts
             posts = self.database.get_cached_posts(
                 status=status,
-                limit=100000,
+                limit=limit,
+                offset=offset,
                 sort_by='timestamp',
                 order='DESC'
             )
             
-            logger.info(f"Retrieved {len(posts)} posts from cache (filter: {filter_type})")
-            return posts
+            logger.info(f"Retrieved {len(posts)} posts (offset={offset}, total={total})")
+            
+            return {
+                'posts': posts,
+                'total': total,
+                'limit': limit,
+                'offset': offset
+            }
         except Exception as e:
             logger.error(f"Failed to get posts: {e}", exc_info=True)
-            # Return empty list instead of crashing
-            return []
+            return {
+                'posts': [],
+                'total': 0,
+                'limit': limit,
+                'offset': offset
+            }
     
-    def get_posts_cached(self, status=None, limit=100000, sort_by='timestamp', order='DESC'):
+    def get_posts_cached(self, status=None, limit=10000, offset=0, sort_by='timestamp', order='DESC'):
         """
-        Direct cache access for streaming endpoint
-        Assumes cache is already initialized
+        Direct cache access for streaming endpoint - OPTIMIZED
         """
         try:
             self._ensure_cache_initialized()
@@ -72,12 +90,25 @@ class PostService:
             return self.database.get_cached_posts(
                 status=status,
                 limit=limit,
+                offset=offset,
                 sort_by=sort_by,
                 order=order
             )
         except Exception as e:
             logger.error(f"Failed to get cached posts: {e}", exc_info=True)
             return []
+    
+    def get_total_count(self, filter_type: str = 'all') -> int:
+        """Get total count without loading posts - OPTIMIZED"""
+        try:
+            filter_type = validate_filter_type(filter_type)
+            self._ensure_cache_initialized()
+            
+            status = None if filter_type == 'all' else filter_type
+            return self.database.get_cache_count(status=status)
+        except Exception as e:
+            logger.error(f"Failed to get total count: {e}", exc_info=True)
+            return 0
     
     def save_post(self, post_id: int) -> bool:
         """Save a pending post to archive - WITH INCREMENTAL CACHE UPDATE"""
@@ -294,14 +325,7 @@ class ScraperService:
         self.database = database
     
     def start_scraper(self, tags: str = "", resume: bool = False):
-        """
-        Start the scraper
-        
-        Returns:
-            - True if started successfully
-            - False if failed
-            - Dict with resume info if resume is available
-        """
+        """Start the scraper"""
         tags = validate_tags(tags) if tags else ""
         
         # Check for resume opportunity if not explicitly resuming
@@ -358,7 +382,6 @@ class AutocompleteService:
             if not query or len(query) < 2:
                 return []
             
-            # Sanitize query
             query = query.strip()[:50]
             
             return self.api_client.get_autocomplete_tags(query)

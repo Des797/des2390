@@ -26,8 +26,10 @@ def create_routes(app, config, services):
     
     # Authentication decorator
     def login_required(f):
+        from functools import wraps
         @wraps(f)
         def decorated_function(*args, **kwargs):
+            from flask import session, redirect, url_for
             if 'logged_in' not in session:
                 return redirect(url_for('login'))
             return f(*args, **kwargs)
@@ -365,61 +367,94 @@ def create_routes(app, config, services):
     @app.route("/api/posts")
     @login_required
     def get_posts():
+        """
+        OPTIMIZED: Returns total count immediately, then streams posts
+        Frontend should use /api/posts/stream for large datasets
+        """
         try:
             filter_type = request.args.get('filter', 'all')
-            logger.info(f"Loading posts with filter: {filter_type}")
             
-            posts = post_service.get_posts(filter_type)
-            logger.info(f"Successfully loaded {len(posts)} posts")
+            # Get total count first (fast)
+            total = post_service.get_total_count(filter_type)
             
-            return jsonify(posts)
-        except ValidationError as e:
-            logger.error(f"Validation error loading posts: {e}")
-            return jsonify({"error": str(e)}), 400
+            # For small datasets, return all at once
+            if total <= 1000:
+                result = post_service.get_posts(filter_type, limit=total, offset=0)
+                return jsonify({
+                    'posts': result['posts'],
+                    'total': total,
+                    'loaded': len(result['posts'])
+                })
+            
+            # For large datasets, return metadata and suggest streaming
+            return jsonify({
+                'posts': [],
+                'total': total,
+                'loaded': 0,
+                'message': 'Dataset too large, use /api/posts/stream endpoint',
+                'use_streaming': True
+            })
+            
         except Exception as e:
-            logger.error(f"Unexpected error loading posts: {e}", exc_info=True)
-            return jsonify({"error": f"Failed to load posts: {str(e)}"}), 500
+            logger.error(f"Error loading posts: {e}", exc_info=True)
+            return jsonify({"error": str(e)}), 500
 
     @app.route("/api/posts/stream")
     @login_required
     def stream_posts():
-        """Stream posts with progress updates - uses fast database cache"""
+        """
+        OPTIMIZED: Stream posts in chunks with progress updates
+        Uses database pagination instead of loading everything
+        """
         filter_type = request.args.get('filter', 'all')
         
         def generate():
             try:
                 start_time = time.time()
                 
-                # Send initial status
-                yield f"data: {json.dumps({'type': 'status', 'message': 'Loading from cache...'})}\n\n"
+                # Get total count (fast with index)
+                yield f"data: {json.dumps({'type': 'status', 'message': 'Counting posts...'})}\n\n"
                 
-                # Get posts from cache (FAST!)
                 status = None if filter_type == 'all' else filter_type
-                posts = post_service.get_posts_cached(
-                    status=status,
-                    limit=100000,
-                    sort_by='timestamp',
-                    order='DESC'
-                )
+                total = post_service.get_total_count(filter_type)
                 
-                total = len(posts)
-                chunk_size = 100
+                yield f"data: {json.dumps({'type': 'status', 'message': f'Loading {total} posts...'})}\n\n"
                 
-                logger.info(f"Streaming {total} cached posts in chunks of {chunk_size}")
+                # Stream in chunks using database pagination
+                chunk_size = 500  # Fetch 500 at a time from DB
+                offset = 0
+                loaded = 0
                 
-                # Send posts in chunks
-                for i in range(0, total, chunk_size):
-                    chunk = posts[i:i + chunk_size]
-                    progress = min(i + chunk_size, total)
+                logger.info(f"Streaming {total} posts in chunks of {chunk_size}")
+                
+                while offset < total:
+                    # Fetch chunk from database
+                    posts = post_service.get_posts_cached(
+                        status=status,
+                        limit=chunk_size,
+                        offset=offset,
+                        sort_by='timestamp',
+                        order='DESC'
+                    )
                     
-                    yield f"data: {json.dumps({'type': 'chunk', 'posts': chunk, 'progress': progress, 'total': total})}\n\n"
+                    if not posts:
+                        break
+                    
+                    loaded += len(posts)
+                    
+                    # Send chunk to client
+                    yield f"data: {json.dumps({'type': 'chunk', 'posts': posts, 'progress': loaded, 'total': total})}\n\n"
+                    
+                    offset += chunk_size
+                    
+                    # Small delay to prevent overwhelming client
                     time.sleep(0.01)
                 
                 load_time = time.time() - start_time
-                logger.info(f"Finished streaming {total} posts from cache in {load_time:.2f}s")
+                logger.info(f"Finished streaming {loaded} posts in {load_time:.2f}s")
                 
                 # Send completion
-                yield f"data: {json.dumps({'type': 'complete', 'total': total})}\n\n"
+                yield f"data: {json.dumps({'type': 'complete', 'total': loaded, 'time': load_time})}\n\n"
                 
             except Exception as e:
                 logger.error(f"Streaming error: {e}", exc_info=True)
@@ -429,7 +464,23 @@ def create_routes(app, config, services):
             'Cache-Control': 'no-cache',
             'X-Accel-Buffering': 'no'
         })
-    
+
+    @app.route("/api/posts/count")
+    @login_required
+    def get_posts_count():
+        """Fast endpoint to get total count only - OPTIMIZED"""
+        try:
+            filter_type = request.args.get('filter', 'all')
+            total = post_service.get_total_count(filter_type)
+            
+            return jsonify({
+                'total': total,
+                'filter': filter_type
+            })
+        except Exception as e:
+            logger.error(f"Error getting count: {e}", exc_info=True)
+            return jsonify({"error": str(e)}), 500
+
     @app.route("/api/pending")
     @login_required
     def get_pending():

@@ -35,8 +35,6 @@ class PostStatusRepository:
                         "INSERT OR REPLACE INTO processed_posts (post_id, status, timestamp) VALUES (?, ?, ?)",
                         (post_id, status, datetime.now().isoformat())
                     )
-                    # No need to call commit() in autocommit mode (isolation_level=None)
-                    # But keeping it doesn't hurt and maintains compatibility
                     conn.commit()
                 return  # Success - exit function
             except Exception as e:
