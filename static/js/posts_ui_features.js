@@ -89,6 +89,7 @@ export async function calculateTopTags(filter, search, limit = 50) {
 }
 
 // Render tag sidebar with backend data - RIGHT-SIDE COLLAPSIBLE with append/negate buttons
+// Render tag sidebar with header toggle (button removed)
 export async function renderTagSidebar(filter, search) {
     // Only show on Posts tab
     const postsTab = document.getElementById('postsTab');
@@ -114,29 +115,23 @@ export async function renderTagSidebar(filter, search) {
     // Parse current search for highlighting
     const searchedTags = extractSearchedTags(search);
     
+    // Sidebar HTML WITHOUT the toggle button
     sidebar.innerHTML = `
         <div class="sidebar-header">
             <h4>Common Tags</h4>
-            <button class="sidebar-toggle" title="${isCollapsed ? 'Expand' : 'Collapse'}">
-                ${isCollapsed ? '◀' : '▶'}
-            </button>
         </div>
         <div class="sidebar-content ${isCollapsed ? 'hidden' : ''}">
             <div style="color: var(--txt-muted); font-style: italic; padding: 10px;">Loading...</div>
         </div>
     `;
     
-    // Setup toggle
-    const toggleBtn = sidebar.querySelector('.sidebar-toggle');
+    const header = sidebar.querySelector('.sidebar-header');
     const content = sidebar.querySelector('.sidebar-content');
-    
-    toggleBtn.addEventListener('click', () => {
+
+    // Click header to collapse/expand
+    header.addEventListener('click', () => {
         const nowCollapsed = sidebar.classList.toggle('collapsed');
         content.classList.toggle('hidden');
-        toggleBtn.textContent = nowCollapsed ? '◀' : '▶';
-        toggleBtn.title = nowCollapsed ? 'Expand' : 'Collapse';
-        
-        // Save state
         localStorage.setItem('tagSidebarCollapsed', nowCollapsed);
     });
     
@@ -145,11 +140,9 @@ export async function renderTagSidebar(filter, search) {
     if (savedCollapsed) {
         sidebar.classList.add('collapsed');
         content.classList.add('hidden');
-        toggleBtn.textContent = '◀';
-        toggleBtn.title = 'Expand';
     }
     
-    if (isCollapsed || savedCollapsed) return; // Don't load if collapsed
+    if (isCollapsed || savedCollapsed) return; // Don't load tags if collapsed
     
     const topTags = await calculateTopTags(filter, search, 50);
     

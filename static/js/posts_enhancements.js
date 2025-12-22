@@ -90,32 +90,39 @@ export async function renderTagSidebar(filter, search) {
     const sidebar = document.getElementById('tagSidebar');
     if (!sidebar) return;
     
-    sidebar.innerHTML = '<div style="color: var(--txt-muted); font-style: italic;">Loading...</div>';
+    // Target ONLY the content area so we don't overwrite the header/click listener
+    const contentArea = sidebar.querySelector('.sidebar-content');
+    const headerTitle = sidebar.querySelector('.sidebar-header h4');
+    
+    if (contentArea) {
+        contentArea.innerHTML = '<div style="color: var(--txt-muted); font-style: italic; font-size: 11px;">Loading...</div>';
+    }
     
     const topTags = await calculateTopTags(filter, search, 50);
     
     if (topTags.length === 0) {
-        sidebar.innerHTML = '<div style="color: var(--txt-muted); font-style: italic;">No tags</div>';
+        if (contentArea) contentArea.innerHTML = '<div style="color: var(--txt-muted); font-size: 11px;">No tags</div>';
         return;
     }
     
-    sidebar.innerHTML = `
-        <h4>Common Tags (${topTags.length})</h4>
-        ${topTags.map(item => `
+    if (headerTitle) headerTitle.textContent = `Common Tags (${topTags.length})`;
+    
+    if (contentArea) {
+        contentArea.innerHTML = topTags.map(item => `
             <div class="sidebar-tag" data-tag="${item.tag}">
-                <span>${item.tag}</span>
+                <span class="sidebar-tag-name">${item.tag}</span>
                 <span class="tag-count">${item.count}</span>
             </div>
-        `).join('')}
-    `;
-    
-    // Attach click handlers
-    sidebar.querySelectorAll('.sidebar-tag').forEach(el => {
-        el.addEventListener('click', () => {
-            const { filterByTag } = await import('./posts.js');
-            filterByTag(el.dataset.tag);
+        `).join('');
+        
+        contentArea.querySelectorAll('.sidebar-tag').forEach(el => {
+            el.addEventListener('click', async (e) => {
+                e.stopPropagation();
+                const { filterByTag } = await import('./posts.js');
+                filterByTag(el.dataset.tag);
+            });
         });
-    });
+    }
 }
 
 // Sort by matching tags
@@ -229,15 +236,26 @@ export function initPostsUI() {
     if (!document.getElementById('tagSidebar')) {
         const sidebar = document.createElement('div');
         sidebar.id = 'tagSidebar';
-        sidebar.className = 'tag-sidebar';
+        sidebar.className = 'tag-sidebar collapsed'; 
+        
+        // We create a permanent structure
+        sidebar.innerHTML = `
+            <div class="sidebar-header">
+                <h4>Common Tags</h4>
+            </div>
+            <div class="sidebar-content"></div>
+        `;
+        
         document.body.appendChild(sidebar);
+        
+        // Click the header to toggle
+        const header = sidebar.querySelector('.sidebar-header');
+        header.addEventListener('click', () => {
+            sidebar.classList.toggle('collapsed');
+        });
     }
-    
-    // Adjust main content for sidebar
     const postsTab = document.getElementById('postsTab');
-    if (postsTab && !postsTab.classList.contains('posts-with-sidebar')) {
-        postsTab.classList.add('posts-with-sidebar');
-    }
+    if (postsTab) postsTab.classList.add('posts-with-sidebar');
 }
 
 // Export for global access
