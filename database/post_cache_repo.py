@@ -183,29 +183,34 @@ class PostCacheRepository:
 
     def get_cache_count(self, status: Optional[str] = None, search_query: Optional[str] = None) -> int:
         """
-        Get total count of cached posts with optional filters
+        Get total count of cached posts with optional filters using QueryTranslator
         
         Args:
             status: Filter by status
-            search_query: Text search query
+            search_query: Advanced query string (uses full translator)
         """
         try:
+            from query_translator import get_query_translator
+            translator = get_query_translator()
+            
             with self.core.get_connection() as conn:
-                query = "SELECT COUNT(*) FROM post_cache WHERE 1=1"
-                params = []
-                
-                if status:
-                    query += " AND status = ?"
-                    params.append(status)
-                
-                # Text search filter
+                # Use translator if search query exists
                 if search_query and search_query.strip():
-                    search_term = f"%{search_query}%"
-                    query += " AND (owner LIKE ? OR title LIKE ? OR tags LIKE ?)"
-                    params.extend([search_term, search_term, search_term])
+                    where_clause, params = translator.translate(search_query, status)
+                    query = f"SELECT COUNT(*) FROM post_cache WHERE {where_clause}"
+                else:
+                    # Simple status filter
+                    if status:
+                        query = "SELECT COUNT(*) FROM post_cache WHERE status = ?"
+                        params = [status]
+                    else:
+                        query = "SELECT COUNT(*) FROM post_cache"
+                        params = []
                 
                 cursor = conn.execute(query, params)
-                return cursor.fetchone()[0]
+                count = cursor.fetchone()[0]
+                logger.info(f"[PostCacheRepository] Count query returned: {count}")
+                return count
         except Exception as e:
             logger.error(f"Failed to get cache count: {e}", exc_info=True)
             return 0

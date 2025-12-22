@@ -202,7 +202,51 @@ class PostService:
             raise StorageError(f"Failed to delete saved post {post_id}")
         
         return success
-    
+
+    def get_top_tags(self, filter_type: str = 'all', search_query: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
+        """
+        Get most common tags in current search results
+        
+        Args:
+            filter_type: Status filter
+            search_query: Advanced query string
+            limit: Max number of tags to return
+        
+        Returns:
+            List of {tag: str, count: int} sorted by frequency
+        """
+        try:
+            from collections import Counter
+            
+            self._ensure_cache_initialized()
+            
+            # Get all matching posts
+            status = None if filter_type == 'all' else filter_type
+            posts = self.database.get_cached_posts(
+                status=status,
+                limit=100000,  # Get all matching posts
+                offset=0,
+                search_query=search_query
+            )
+            
+            # Count tag frequencies
+            tag_counter = Counter()
+            for post in posts:
+                for tag in post.get('tags', []):
+                    tag_counter[tag] += 1
+            
+            # Return top tags
+            top_tags = [
+                {'tag': tag, 'count': count}
+                for tag, count in tag_counter.most_common(limit)
+            ]
+            
+            return top_tags
+            
+        except Exception as e:
+            logger.error(f"Failed to get top tags: {e}", exc_info=True)
+            return []
+
     def get_post_size(self, post_id: int) -> int:
         """Get file size for a post"""
         post_id = validate_post_id(post_id)

@@ -176,6 +176,9 @@ async function loadPosts(updateURL = true) {
     const startTime = Date.now();
     
     try {
+        // Initialize UI features
+        import('./posts_ui_features.js').then(module => module.initPostsUI());
+        
         // Load tag counts if needed
         if (!state.tagCounts || Object.keys(state.tagCounts).length === 0) {
             console.log('📋 Loading tag counts...');
@@ -216,9 +219,9 @@ async function loadPosts(updateURL = true) {
             effectiveStatus,
             perPage,
             offset,
-            sortBy,
+            sortBy === 'tags_matching' ? 'timestamp' : sortBy, // Fallback for custom sort
             order,
-            searchQuery  // <- TEXT SEARCH happens on server
+            searchQuery
         );
         
         let posts = result.posts;
@@ -235,6 +238,21 @@ async function loadPosts(updateURL = true) {
             }
             return post;
         });
+        
+        // Apply client-side enhancements
+        const { highlightMatchingTags, sortByTagMatching, renderTagSidebar } = await import('./posts_ui_features.js');
+        
+        // Highlight matching tags
+        posts = highlightMatchingTags(posts, searchQuery);
+        
+        // If sorting by tag matching, apply custom sort
+        if (sortBy === 'tags_matching') {
+            const blacklist = JSON.parse(localStorage.getItem('blacklist') || '[]');
+            posts = sortByTagMatching(posts, searchQuery, blacklist);
+        }
+        
+        // Render tag sidebar (async from backend)
+        renderTagSidebar(effectiveStatus, searchQuery);
         
         // Store posts for modal navigation
         state.allPosts = posts;

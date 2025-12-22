@@ -504,6 +504,36 @@ def create_routes(app, config, services):
             logger.error(f"Error getting post IDs: {e}", exc_info=True)
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/posts/top-tags")
+    @login_required
+    def get_top_tags():
+        """
+        Get most common tags in current search results
+        
+        Query params:
+            - filter: 'all', 'pending', 'saved'
+            - search: search query
+            - limit: number of tags (default 50)
+        """
+        try:
+            filter_type = request.args.get('filter', 'all')
+            search_query = request.args.get('search', '').strip()
+            limit = int(request.args.get('limit', 50))
+            
+            top_tags = post_service.get_top_tags(
+                filter_type,
+                search_query if search_query else None,
+                limit
+            )
+            
+            return jsonify({
+                'tags': top_tags,
+                'count': len(top_tags)
+            })
+        except Exception as e:
+            logger.error(f"Error getting top tags: {e}", exc_info=True)
+            return jsonify({"error": str(e)}), 500
+
     @app.route("/api/posts/count")
     @login_required
     def get_posts_count():

@@ -334,16 +334,29 @@ function renderOwner(post) {
 /**
  * Render tags preview (first 3 tags with counts)
  */
-function renderTagsPreview(post) {
-    const tagsPreview = post.tags.slice(0, UI_CONSTANTS.TAGS_PREVIEW_LIMIT).map(t => {
+function renderTagsPreview(post, searchQuery = '') {
+    const matchingTags = post.matchingTags || [];
+    
+    // Show ALL matching tags, then first few non-matching
+    const sortedTags = [
+        ...post.tags.filter(t => matchingTags.includes(t)),
+        ...post.tags.filter(t => !matchingTags.includes(t))
+    ];
+    
+    const visibleTags = sortedTags.slice(0, UI_CONSTANTS.TAGS_PREVIEW_LIMIT + matchingTags.length);
+    const remainingCount = post.tags.length - visibleTags.length;
+    
+    const tagsHtml = visibleTags.map(t => {
+        const isMatching = matchingTags.includes(t);
+        const matchClass = isMatching ? 'matching' : '';
         const tagWithCount = getTagWithCount(t, state.tagCounts);
-        return `<span class="${CSS_CLASSES.TAG}" data-tag="${t}" title="${tagWithCount}">${t}</span>`;
+        return `<span class="${CSS_CLASSES.TAG} ${matchClass}" data-tag="${t}" title="${tagWithCount}">${t}</span>`;
     }).join('');
     
-    const expandBtn = post.tags.length > UI_CONSTANTS.TAGS_PREVIEW_LIMIT ? 
-        `<span style="cursor:pointer;color:#10b981" class="${CSS_CLASSES.EXPAND_TAGS}">+${post.tags.length - UI_CONSTANTS.TAGS_PREVIEW_LIMIT}</span>` : '';
+    const expandBtn = remainingCount > 0 ? 
+        `<span style="cursor:pointer;color:#10b981;position:relative;" class="${CSS_CLASSES.EXPAND_TAGS}" data-all-tags='${JSON.stringify(post.tags)}' data-matching='${JSON.stringify(matchingTags)}'>+${remainingCount}</span>` : '';
     
-    return { tagsPreview, expandBtn };
+    return { tagsPreview: tagsHtml, expandBtn };
 }
 
 /**

@@ -30,6 +30,7 @@
 @import url("./features/offline.css");
 @import url("./features/blacklist.css");
 @import url("./features/tag-history.css");
+@import url("./features/posts-enhancements.css");
 
 /* ===== Responsive ===== */
 @import url("./responsive/mobile.css");

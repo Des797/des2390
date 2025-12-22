@@ -69,17 +69,34 @@ function attachPostEventListeners() {
         });
     });
     
-    // Expand tags
+// Expand tags with dropdown (no card resize)
     document.querySelectorAll(`.${CSS_CLASSES.EXPAND_TAGS}`).forEach(btn => {
-        btn.addEventListener('click', function() {
-            const container = this.parentElement;
-            const allTags = JSON.parse(container.dataset.allTags);
-            container.innerHTML = renderExpandedTags(allTags);
+        btn.addEventListener('click', async function(e) {
+            e.stopPropagation();
             
-            // Re-attach tag listeners
-            container.querySelectorAll(`.${CSS_CLASSES.TAG}`).forEach(tag => {
-                tag.addEventListener('click', () => filterByTag(tag.dataset.tag));
-            });
+            const allTags = JSON.parse(this.dataset.allTags);
+            const matchingTags = JSON.parse(this.dataset.matching || '[]');
+            
+            // Try to use dropdown if enhancements available, otherwise fallback to inline
+            try {
+                const module = await import('./posts_enhancements.js');
+                const tagsWithMatch = allTags.map(tag => ({
+                    name: tag,
+                    display: getTagWithCount(tag, state.tagCounts),
+                    isMatching: matchingTags.includes(tag)
+                }));
+                
+                module.showTagDropdown(this, tagsWithMatch);
+            } catch (err) {
+                // Fallback: expand inline
+                const container = this.parentElement;
+                container.innerHTML = renderExpandedTags(allTags);
+                
+                // Re-attach tag listeners
+                container.querySelectorAll(`.${CSS_CLASSES.TAG}`).forEach(tag => {
+                    tag.addEventListener('click', () => filterByTag(tag.dataset.tag));
+                });
+            }
         });
     });
     
