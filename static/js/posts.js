@@ -197,7 +197,11 @@ async function loadPosts(updateURL = true) {
         const total = await getTotalCount(effectiveStatus, searchQuery);
         console.log(`✅ Total: ${total} posts (with filters)`);
         
-        document.getElementById(ELEMENT_IDS.POSTS_TOTAL_RESULTS).textContent = `Total: ${total} posts`;
+        // Update total display IMMEDIATELY
+        const totalResultsEl = document.getElementById(ELEMENT_IDS.POSTS_TOTAL_RESULTS);
+        if (totalResultsEl) {
+            totalResultsEl.textContent = `Total: ${total} posts`;
+        }
         
         // Step 2: Get posts per page
         let perPage = parseInt(document.getElementById(ELEMENT_IDS.POSTS_PER_PAGE).value);

@@ -313,20 +313,39 @@ class QueryTranslator:
         operator = node.operator
         is_negated = node.is_negated
         
-        # Tag search - uses FTS5
+        logger.debug(f"Converting filter to SQL: key={key}, value={value}, op={operator}, neg={is_negated}")
+        
+        # Tag search - FIXED: Use JSON array search instead of FTS5
         if key == 'tag':
+            # Tags are stored as JSON array: ["tag1", "tag2", ...]
+            # We need to search within the JSON array
+            
             if '*' in value:
-                # Wildcard - use FTS5 prefix search
-                fts_term = value.replace('*', '*')  # FTS5 uses * for prefix
+                # Wildcard search - use LIKE on JSON representation
+                pattern = value.replace('*', '%')
+                # Search for tag within the JSON array
+                # Format: ["tag1", "searched_tag", "tag3"]
+                search_pattern = f'%"{pattern}"%'
+                
+                if is_negated:
+                    sql = "tags NOT LIKE ?"
+                else:
+                    sql = "tags LIKE ?"
+                
+                logger.debug(f"Tag wildcard SQL: {sql} with pattern: {search_pattern}")
+                return sql, [search_pattern]
             else:
-                fts_term = value
-            
-            if is_negated:
-                sql = "post_id NOT IN (SELECT post_id FROM post_search_fts WHERE post_search_fts MATCH ?)"
-            else:
-                sql = "post_id IN (SELECT post_id FROM post_search_fts WHERE post_search_fts MATCH ?)"
-            
-            return sql, [fts_term]
+                # Exact tag match within JSON array
+                # Format: ["tag1", "exact_tag", "tag3"]
+                search_pattern = f'%"{value}"%'
+                
+                if is_negated:
+                    sql = "tags NOT LIKE ?"
+                else:
+                    sql = "tags LIKE ?"
+                
+                logger.debug(f"Tag exact SQL: {sql} with pattern: {search_pattern}")
+                return sql, [search_pattern]
         
         # Numeric fields
         if key in self.NUMERIC_FIELDS:

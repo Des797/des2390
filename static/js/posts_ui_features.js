@@ -1,0 +1,294 @@
+// Posts UI Features Module
+// Provides tag highlighting, sidebar, and other UI enhancements
+
+import { state } from './state.js';
+import { filterByTag } from './posts.js';
+
+console.log('✅ posts_ui_features.js loaded');
+
+// Tag matching and highlighting
+export function highlightMatchingTags(posts, searchQuery) {
+    if (!searchQuery) return posts;
+    
+    // Parse search query to extract tag filters
+    const tagFilters = extractTagFilters(searchQuery);
+    
+    posts.forEach(post => {
+        post.matchingTags = [];
+        post.matchScore = 0;
+        
+        post.tags.forEach(tag => {
+            if (tagFilters.some(filter => matchesFilter(tag, filter))) {
+                post.matchingTags.push(tag);
+                post.matchScore++;
+            }
+        });
+    });
+    
+    return posts;
+}
+
+function extractTagFilters(query) {
+    // Extract tag patterns from query (handle OR, wildcards, etc)
+    const filters = [];
+    const tokens = query.split(/\s+/);
+    
+    tokens.forEach(token => {
+        // Skip non-tag filters
+        if (token.includes(':') && !token.startsWith('tag:')) return;
+        
+        // Remove tag: prefix if present
+        const cleanToken = token.replace(/^tag:/, '');
+        
+        // Handle OR groups: (red | blue)
+        if (cleanToken.includes('|')) {
+            const orParts = cleanToken.replace(/[()]/g, '').split('|').map(t => t.trim());
+            filters.push(...orParts);
+        } else {
+            filters.push(cleanToken);
+        }
+    });
+    
+    return filters.filter(f => f && !f.startsWith('-') && !f.startsWith('!'));
+}
+
+function matchesFilter(tag, filter) {
+    // Wildcard matching
+    if (filter.includes('*')) {
+        const regex = new RegExp('^' + filter.replace(/\*/g, '.*') + '$', 'i');
+        return regex.test(tag);
+    }
+    
+    return tag.toLowerCase() === filter.toLowerCase();
+}
+
+// Calculate most common tags from backend
+export async function calculateTopTags(filter, search, limit = 50) {
+    try {
+        const params = new URLSearchParams({
+            filter: filter || 'all',
+            limit: limit.toString()
+        });
+        
+        if (search) {
+            params.append('search', search);
+        }
+        
+        const response = await fetch(`/api/posts/top-tags?${params}`);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const data = await response.json();
+        return data.tags;
+        
+    } catch (error) {
+        console.error('Failed to calculate top tags:', error);
+        return [];
+    }
+}
+
+// Render tag sidebar with backend data - RIGHT-SIDE COLLAPSIBLE
+export async function renderTagSidebar(filter, search) {
+    let sidebar = document.getElementById('tagSidebar');
+    if (!sidebar) {
+        sidebar = document.createElement('div');
+        sidebar.id = 'tagSidebar';
+        sidebar.className = 'tag-sidebar';
+        document.body.appendChild(sidebar);
+    }
+    
+    // Check if collapsed
+    const isCollapsed = sidebar.classList.contains('collapsed');
+    
+    sidebar.innerHTML = `
+        <div class="sidebar-header">
+            <h4>Common Tags</h4>
+            <button class="sidebar-toggle" title="${isCollapsed ? 'Expand' : 'Collapse'}">
+                ${isCollapsed ? '◀' : '▶'}
+            </button>
+        </div>
+        <div class="sidebar-content ${isCollapsed ? 'hidden' : ''}">
+            <div style="color: var(--txt-muted); font-style: italic; padding: 10px;">Loading...</div>
+        </div>
+    `;
+    
+    // Setup toggle
+    const toggleBtn = sidebar.querySelector('.sidebar-toggle');
+    const content = sidebar.querySelector('.sidebar-content');
+    
+    toggleBtn.addEventListener('click', () => {
+        const nowCollapsed = sidebar.classList.toggle('collapsed');
+        content.classList.toggle('hidden');
+        toggleBtn.textContent = nowCollapsed ? '◀' : '▶';
+        toggleBtn.title = nowCollapsed ? 'Expand' : 'Collapse';
+        
+        // Save state
+        localStorage.setItem('tagSidebarCollapsed', nowCollapsed);
+    });
+    
+    // Restore collapsed state
+    const savedCollapsed = localStorage.getItem('tagSidebarCollapsed') === 'true';
+    if (savedCollapsed) {
+        sidebar.classList.add('collapsed');
+        content.classList.add('hidden');
+        toggleBtn.textContent = '◀';
+        toggleBtn.title = 'Expand';
+    }
+    
+    if (isCollapsed || savedCollapsed) return; // Don't load if collapsed
+    
+    const topTags = await calculateTopTags(filter, search, 50);
+    
+    if (topTags.length === 0) {
+        content.innerHTML = '<div style="color: var(--txt-muted); font-style: italic; padding: 10px;">No tags</div>';
+        return;
+    }
+    
+    content.innerHTML = topTags.map(item => `
+        <div class="sidebar-tag" data-tag="${item.tag}">
+            <span class="sidebar-tag-name">${item.tag}</span>
+            <span class="tag-count">${item.count}</span>
+        </div>
+    `).join('');
+    
+    // Attach click handlers
+    content.querySelectorAll('.sidebar-tag').forEach(el => {
+        el.addEventListener('click', async () => {
+            const { filterByTag } = await import('./posts.js');
+            filterByTag(el.dataset.tag);
+        });
+    });
+}
+
+// Sort by matching tags
+export function sortByTagMatching(posts, searchQuery, blacklist = []) {
+    if (!searchQuery && !blacklist.length) return posts;
+    
+    return posts.sort((a, b) => {
+        // Calculate blacklist penalty
+        const aBlacklist = a.tags.filter(t => blacklist.some(bl => matchesFilter(t, bl))).length;
+        const bBlacklist = b.tags.filter(t => blacklist.some(bl => matchesFilter(t, bl))).length;
+        
+        // Blacklisted posts go to bottom
+        if (aBlacklist !== bBlacklist) {
+            return bBlacklist - aBlacklist;
+        }
+        
+        // Then sort by matching score
+        return (b.matchScore || 0) - (a.matchScore || 0);
+    });
+}
+
+// Card size scaling - IMPROVED with better range and no overlap
+let cardSizeScale = 1.0;
+
+export function setCardSize(scale) {
+    // Better range: 0.3 (30%) to 3.0 (300%)
+    cardSizeScale = Math.max(0.3, Math.min(3.0, scale));
+    
+    const baseWidth = 180;
+    const scaledWidth = Math.floor(baseWidth * cardSizeScale);
+    
+    const grid = document.getElementById('postsGrid');
+    if (grid) {
+        // Use scaled width for grid columns - prevents overlap
+        grid.style.gridTemplateColumns = `repeat(auto-fill, ${scaledWidth}px)`;
+        grid.style.gap = `${Math.max(8, 12 * cardSizeScale)}px`; // Scale gap too
+    }
+    
+    // Remove individual card transforms - let grid handle sizing
+    document.querySelectorAll('.gallery-item').forEach(card => {
+        card.style.transform = 'none';
+        card.style.width = `${scaledWidth}px`;
+    });
+}
+
+export function getCardSize() {
+    return cardSizeScale;
+}
+
+// Tag dropdown (non-moving)
+export function showTagDropdown(button, allTags) {
+    const existingDropdown = document.querySelector('.tag-dropdown');
+    if (existingDropdown) {
+        existingDropdown.remove();
+    }
+    
+    const dropdown = document.createElement('div');
+    dropdown.className = 'tag-dropdown show';
+    dropdown.innerHTML = allTags.map(tag => {
+        const matchClass = tag.isMatching ? 'matching' : '';
+        return `<span class="tag ${matchClass}" data-tag="${tag.name}">${tag.display}</span>`;
+    }).join('');
+    
+    // Position relative to button
+    const rect = button.getBoundingClientRect();
+    dropdown.style.top = (rect.bottom + window.scrollY) + 'px';
+    dropdown.style.left = rect.left + 'px';
+    
+    document.body.appendChild(dropdown);
+    
+    // Attach tag click handlers
+    dropdown.querySelectorAll('.tag').forEach(el => {
+        el.addEventListener('click', () => {
+            filterByTag(el.dataset.tag);
+            dropdown.remove();
+        });
+    });
+    
+    // Close on outside click
+    setTimeout(() => {
+        document.addEventListener('click', function closeDropdown(e) {
+            if (!dropdown.contains(e.target) && e.target !== button) {
+                dropdown.remove();
+                document.removeEventListener('click', closeDropdown);
+            }
+        });
+    }, 0);
+    
+    return dropdown;
+}
+
+// Initialize new UI features
+export function initPostsUI() {
+    console.log('📱 Initializing posts UI features...');
+    
+    // Add card size control with better range
+    const controls = document.querySelector('.gallery-controls');
+    if (controls && !document.getElementById('cardSizeControl')) {
+        const sizeControl = document.createElement('div');
+        sizeControl.className = 'card-size-control';
+        sizeControl.innerHTML = `
+            <label style="color: var(--txt-muted); font-size: 12px;">Card Size:</label>
+            <input type="range" id="cardSizeControl" min="30" max="300" value="100" step="10">
+            <span id="cardSizeValue" style="color: var(--txt-muted); font-size: 12px;">100%</span>
+        `;
+        controls.appendChild(sizeControl);
+        
+        const slider = document.getElementById('cardSizeControl');
+        const valueDisplay = document.getElementById('cardSizeValue');
+        
+        slider.addEventListener('input', (e) => {
+            const scale = parseInt(e.target.value) / 100;
+            setCardSize(scale);
+            valueDisplay.textContent = e.target.value + '%';
+        });
+    }
+    
+    // Adjust main content for sidebar (right side)
+    const postsTab = document.getElementById('postsTab');
+    if (postsTab && !postsTab.classList.contains('posts-with-sidebar')) {
+        postsTab.classList.add('posts-with-sidebar');
+    }
+    
+    console.log('✅ Posts UI features initialized');
+}
+
+// Export for global access
+window.highlightMatchingTags = highlightMatchingTags;
+window.renderTagSidebar = renderTagSidebar;
+window.sortByTagMatching = sortByTagMatching;
+window.showTagDropdown = showTagDropdown;
+window.setCardSize = setCardSize;
+window.initPostsUI = initPostsUI;
