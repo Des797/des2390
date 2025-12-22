@@ -69,17 +69,12 @@
 
 .gallery-item-tags .tag {
     display: inline-block;
-    background: var(--accent-dark);
-    padding: 3px 6px;
-    border-radius: 3px;
+    background: #2c5d3f;
+    padding: 2px;
     margin: 2px;
     cursor: pointer;
     transition: background 0.2s;
     font-size: 15px;
-}
-
-.gallery-item-tags .tag:hover {
-    background: var(--accent-dark);
 }
 
 .gallery-item-actions {

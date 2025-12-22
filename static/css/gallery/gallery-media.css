@@ -14,6 +14,11 @@
     position: relative;
     background: #000;
 }
+
+.gallery-item-media.media-gif {
+    border: 4px solid #eab308;
+}
+
 .gallery-item-media .video-poster {
     position: absolute;
     top: 0;
@@ -96,10 +101,6 @@
     background: rgba(127, 29, 29, 0.9);
     animation: none;
     cursor: help;
-}
-
-.gallery-item-media.media-gif {
-    border: 3px solid #eab308;
 }
 
 .gallery-item-media img,

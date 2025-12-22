@@ -88,8 +88,7 @@ export async function calculateTopTags(filter, search, limit = 50) {
     }
 }
 
-// Render tag sidebar with backend data - RIGHT-SIDE COLLAPSIBLE with append/negate buttons
-// Render tag sidebar with header toggle (button removed)
+// Render tag sidebar with backend data
 export async function renderTagSidebar(filter, search) {
     // Only show on Posts tab
     const postsTab = document.getElementById('postsTab');
@@ -167,6 +166,8 @@ export async function renderTagSidebar(filter, search) {
         `;
     }).join('');
     
+    enableTagTextScroll();
+    
     // Attach click handlers for tag names (replace search)
     content.querySelectorAll('.sidebar-tag-name').forEach(el => {
         el.addEventListener('click', async () => {
@@ -193,6 +194,84 @@ export async function renderTagSidebar(filter, search) {
             await appendTagToSearch(`-${tag}`);
         });
     });
+
+    function enableTagTextScroll() {
+        document.querySelectorAll('.sidebar-tag').forEach(tagEl => {
+            const textEl = tagEl.querySelector('.sidebar-tag-name');
+            if (!textEl) return;
+
+            const originalText = textEl.textContent;
+
+            // Reset content
+            textEl.innerHTML = '';
+            const inner = document.createElement('span');
+            inner.className = 'scroll-inner';
+            inner.textContent = originalText;
+            textEl.appendChild(inner);
+
+            // Container styles
+            textEl.style.display = 'flex';
+            textEl.style.alignItems = 'center';
+            textEl.style.overflow = 'hidden';
+            textEl.style.whiteSpace = 'nowrap';
+            textEl.style.textOverflow = 'ellipsis';
+            textEl.style.position = 'relative';
+
+            inner.style.display = 'inline-block';
+            inner.style.whiteSpace = 'nowrap';
+            inner.style.willChange = 'transform';
+
+            const containerWidth = textEl.offsetWidth;
+            const fullWidth = inner.scrollWidth;
+
+            if (fullWidth <= containerWidth) {
+                // Short text: right-align
+                textEl.style.justifyContent = 'flex-end';
+                textEl.classList.remove('fade-edges');
+                return;
+            }
+
+            // Long text: left-align and prepare scrolling
+            textEl.style.justifyContent = 'flex-start';
+            textEl.classList.add('fade-edges');
+
+            // Duplicate inner span for seamless loop
+            const inner2 = inner.cloneNode(true);
+            inner2.style.marginLeft = '20px'; // optional spacing
+            textEl.appendChild(inner2);
+
+            let animationFrame = null;
+            const scrollSpeed = 0.5; // pixels per frame
+            let offset = 0;
+            let hovering = false;
+
+            function step() {
+                if (!hovering) return;
+
+                offset += scrollSpeed;
+                if (offset >= fullWidth + 20) offset = 0; // wrap around
+
+                inner.style.transform = `translateX(${-offset}px)`;
+                inner2.style.transform = `translateX(${-offset}px)`;
+
+                animationFrame = requestAnimationFrame(step);
+            }
+
+            tagEl.addEventListener('mouseenter', () => {
+                hovering = true;
+                if (!animationFrame) animationFrame = requestAnimationFrame(step);
+            });
+
+            tagEl.addEventListener('mouseleave', () => {
+                hovering = false;
+                offset = 0;
+                inner.style.transform = 'translateX(0)';
+                inner2.style.transform = 'translateX(0)';
+                cancelAnimationFrame(animationFrame);
+                animationFrame = null;
+            });
+        });
+    }
 }
 
 function extractSearchedTags(search) {

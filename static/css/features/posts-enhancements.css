@@ -82,10 +82,11 @@
 
 /* ==================== MATCHING TAGS ==================== */
 .gallery-item-tags .tag.matching {
-    background: linear-gradient(135deg, #f59e0b, #eab308);
-    color: white;
-    font-weight: 600;
-    box-shadow: 0 1px 3px rgba(245, 158, 11, 0.3);
+    background: #4ea329;
+}
+
+.gallery-item-tags .tag.matching:hover {
+    background: #2c5d3f;
 }
 
 /* ==================== TAG DROPDOWN ==================== */
@@ -116,8 +117,8 @@
 .tag-sidebar {
     position: fixed;
     right: 0;
-    top: 160px;
-    width: 260px;
+    top: 90px;
+    width: 320px;
     max-height: calc(100vh - 180px);
     overflow: hidden;
     background: var(--bg-panel);
@@ -161,23 +162,33 @@
 }
 
 .tag-sidebar.collapsed .sidebar-header {
-    padding: 12px 6px;
-    width: 40px;
-    cursor: pointer;
+    position: relative;
+    display: flex;
+    align-items: center;
     justify-content: center;
+    width: 40px;
+    height: 150px;
+    padding: 8px 6px;
+    margin: 6px 0;
     border-radius: 12px 0 0 12px;
+    border: 1px solid rgba(0,0,0,0.06);
+    box-shadow: 0 4px 10px rgba(0,0,0,0.12);
+    cursor: pointer;
     pointer-events: auto;
+    transition: background 0.2s ease, transform 0.12s ease;
 }
 
 .tag-sidebar.collapsed .sidebar-header h4 {
     margin: 0;
-    font-size: 11px;
-    letter-spacing: 1px;
+    line-height: 1;
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    text-orientation: mixed;
     white-space: nowrap;
 }
 
 .sidebar-header h4 {
-    color: var(--accent);
+    color: var(--txt-main);
     margin: 0;
     font-size: 13px;
     font-weight: 600;
@@ -197,9 +208,8 @@
     align-items: center;
     padding: 8px 12px;
     margin: 3px 0;
-    background: var(--bg-main);
+    background: #2c5d3f;
     border-radius: 6px;
-    font-size: 11px;
     cursor: pointer;
     transition: all 0.2s ease;
     border: 1px solid transparent;
@@ -215,12 +225,24 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    margin-right: 8px;
+    margin-right: 16px;
+}
+
+.sidebar-tag-name.fade-edges {
+    overflow: hidden;
+    white-space: nowrap;
+
+    -webkit-mask-image: linear-gradient(to right, black 0%, black 90%, transparent 100%);
+    -webkit-mask-repeat: no-repeat;
+    -webkit-mask-size: 100% 100%;
+    mask-image: linear-gradient(to right, black 0%, black 90%, transparent 100%);
+    mask-repeat: no-repeat;
+    mask-size: 100% 100%;
 }
 
 .tag-sidebar .sidebar-tag .tag-count {
     color: var(--txt-muted);
-    font-size: 10px;
+    font-size: 16px;
     font-weight: 600;
     background: var(--border-main);
     padding: 2px 6px;
