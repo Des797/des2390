@@ -518,21 +518,90 @@ function renderModalInfoGrid(post) {
 }
 
 /**
- * Render complete modal content for a post
+ * Render complete modal content for a post - IMPROVED with actions at top
  */
 function renderModalContent(post) {
     const statusBadge = renderModalStatusBadge(post.status);
     const tagsHtml = renderModalTags(post.tags);
-    const infoGrid = renderModalInfoGrid(post);
     const actions = renderModalActions(post);
     
+    // Calculate file size display
+    const fileSizeDisplay = post.file_size 
+        ? `${(post.file_size / 1024 / 1024).toFixed(2)} MB` 
+        : 'Unknown';
+    
+    // Format dates
+    const uploadDate = post.created_at 
+        ? new Date(post.created_at).toLocaleDateString() 
+        : 'Unknown';
+    const downloadDate = post.downloaded_at 
+        ? new Date(post.downloaded_at).toLocaleDateString() 
+        : 'Unknown';
+    
     return `
-        <h3>${post.title || `Post ${post.id}`}</h3>
-        <div style="margin-bottom: 15px;">${statusBadge}</div>
-        ${infoGrid}
-        <h4 style="color:#94a3b8;margin-bottom:10px">Tags:</h4>
-        <div class="modal-tags">${tagsHtml}</div>
         <div class="modal-actions">${actions}</div>
+        
+        <h3>${post.title || `Post ${post.id}`}</h3>
+        
+        <div style="margin-bottom: 15px;">${statusBadge}</div>
+        
+        <div class="modal-info-grid">
+            <div class="modal-info-item">
+                <strong>ID</strong>
+                <span>${post.id}</span>
+            </div>
+            <div class="modal-info-item">
+                <strong>Owner</strong>
+                <span style="cursor:pointer;color:var(--accent);font-weight:600;" onclick="window.modalFilterByOwner('${post.owner}')">${post.owner}</span>
+            </div>
+            <div class="modal-info-item">
+                <strong>Dimensions</strong>
+                <span>${post.width}×${post.height}</span>
+            </div>
+            <div class="modal-info-item">
+                <strong>File Size</strong>
+                <span>${fileSizeDisplay}</span>
+            </div>
+            <div class="modal-info-item">
+                <strong>File Type</strong>
+                <span>${post.file_type || 'Unknown'}</span>
+            </div>
+            <div class="modal-info-item">
+                <strong>Rating</strong>
+                <span>${post.rating || 'Unknown'}</span>
+            </div>
+            <div class="modal-info-item">
+                <strong>Score</strong>
+                <span>${post.score}</span>
+            </div>
+            <div class="modal-info-item">
+                <strong>Tags</strong>
+                <span>${post.tags.length}</span>
+            </div>
+            <div class="modal-info-item">
+                <strong>Uploaded</strong>
+                <span>${uploadDate}</span>
+            </div>
+            <div class="modal-info-item">
+                <strong>Downloaded</strong>
+                <span>${downloadDate}</span>
+            </div>
+            ${post.date_folder ? `
+                <div class="modal-info-item">
+                    <strong>Date Folder</strong>
+                    <span>${post.date_folder}</span>
+                </div>
+            ` : ''}
+            ${post.duration ? `
+                <div class="modal-info-item">
+                    <strong>Duration</strong>
+                    <span>${formatVideoDuration(post.duration)}</span>
+                </div>
+            ` : ''}
+        </div>
+        
+        <h4 style="color:var(--accent);margin-bottom:15px;font-size:16px;">Tags (${post.tags.length})</h4>
+        <div class="modal-tags">${tagsHtml}</div>
     `;
 }
 

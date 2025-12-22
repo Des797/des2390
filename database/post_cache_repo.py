@@ -59,25 +59,58 @@ class PostCacheRepository:
             return False
 
     def update_post_status(self, post_id: int, status: str, date_folder: str = None) -> bool:
-        """Update post status in cache (pending -> saved)"""
-        try:
-            with self.core.get_connection() as conn:
-                with conn:
-                    if date_folder:
-                        conn.execute(
-                            "UPDATE post_cache SET status = ?, date_folder = ? WHERE post_id = ?",
-                            (status, date_folder, post_id)
-                        )
-                    else:
-                        conn.execute(
-                            "UPDATE post_cache SET status = ? WHERE post_id = ?",
-                            (status, post_id)
-                        )
-            logger.debug(f"Updated post {post_id} status to {status}")
-            return True
-        except Exception as e:
-            logger.error(f"Failed to update post {post_id} status: {e}", exc_info=True)
-            return False
+        """Update post status in cache (pending -> saved) with retry logic"""
+        max_retries = 5
+        retry_delay = 0.2
+        
+        for attempt in range(max_retries):
+            try:
+                with self.core.get_connection() as conn:
+                    # Check if database is accessible first
+                    try:
+                        conn.execute("SELECT 1").fetchone()
+                    except sqlite3.DatabaseError as db_err:
+                        if "malformed" in str(db_err).lower():
+                            logger.error(f"Database corruption detected: {db_err}")
+                            logger.error("Please run database repair: VACUUM or restore from backup")
+                            return False
+                        raise
+                    
+                    with conn:
+                        if date_folder:
+                            conn.execute(
+                                "UPDATE post_cache SET status = ?, date_folder = ? WHERE post_id = ?",
+                                (status, date_folder, post_id)
+                            )
+                        else:
+                            conn.execute(
+                                "UPDATE post_cache SET status = ? WHERE post_id = ?",
+                                (status, post_id)
+                            )
+                logger.debug(f"Updated post {post_id} status to {status}")
+                return True
+                
+            except sqlite3.DatabaseError as e:
+                error_msg = str(e)
+                if "malformed" in error_msg.lower():
+                    logger.error(f"CRITICAL: Database file is corrupted: {error_msg}")
+                    logger.error("Action required: Run VACUUM or restore from backup")
+                    return False
+                    
+                if attempt < max_retries - 1:
+                    logger.warning(f"Database error on attempt {attempt + 1}/{max_retries}: {error_msg}")
+                    time.sleep(retry_delay * (2 ** attempt))
+                    continue
+                else:
+                    logger.error(f"Failed to update post {post_id} after {max_retries} attempts: {e}", exc_info=True)
+                    return False
+                    
+            except Exception as e:
+                logger.error(f"Unexpected error updating post {post_id} status: {e}", exc_info=True)
+                return False
+        
+        return False
+
     def get_cached_posts(
         self, 
         status: Optional[str] = None,

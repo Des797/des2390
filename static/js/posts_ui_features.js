@@ -88,8 +88,16 @@ export async function calculateTopTags(filter, search, limit = 50) {
     }
 }
 
-// Render tag sidebar with backend data - RIGHT-SIDE COLLAPSIBLE
+// Render tag sidebar with backend data - RIGHT-SIDE COLLAPSIBLE with append/negate buttons
 export async function renderTagSidebar(filter, search) {
+    // Only show on Posts tab
+    const postsTab = document.getElementById('postsTab');
+    if (!postsTab || !postsTab.classList.contains('active')) {
+        const existingSidebar = document.getElementById('tagSidebar');
+        if (existingSidebar) existingSidebar.style.display = 'none';
+        return;
+    }
+    
     let sidebar = document.getElementById('tagSidebar');
     if (!sidebar) {
         sidebar = document.createElement('div');
@@ -98,8 +106,13 @@ export async function renderTagSidebar(filter, search) {
         document.body.appendChild(sidebar);
     }
     
+    sidebar.style.display = 'block';
+    
     // Check if collapsed
     const isCollapsed = sidebar.classList.contains('collapsed');
+    
+    // Parse current search for highlighting
+    const searchedTags = extractSearchedTags(search);
     
     sidebar.innerHTML = `
         <div class="sidebar-header">
@@ -145,20 +158,90 @@ export async function renderTagSidebar(filter, search) {
         return;
     }
     
-    content.innerHTML = topTags.map(item => `
-        <div class="sidebar-tag" data-tag="${item.tag}">
-            <span class="sidebar-tag-name">${item.tag}</span>
-            <span class="tag-count">${item.count}</span>
-        </div>
-    `).join('');
+    content.innerHTML = topTags.map(item => {
+        const isSearched = searchedTags.includes(item.tag.toLowerCase());
+        const highlightClass = isSearched ? 'searched-tag' : '';
+        
+        return `
+            <div class="sidebar-tag ${highlightClass}" data-tag="${item.tag}">
+                <span class="sidebar-tag-name" title="${item.tag}">${item.tag}</span>
+                <div class="sidebar-tag-actions">
+                    <button class="tag-action-add" data-tag="${item.tag}" title="Add to search">+</button>
+                    <button class="tag-action-negate" data-tag="${item.tag}" title="Exclude from search">−</button>
+                    <span class="tag-count">${item.count}</span>
+                </div>
+            </div>
+        `;
+    }).join('');
     
-    // Attach click handlers
-    content.querySelectorAll('.sidebar-tag').forEach(el => {
+    // Attach click handlers for tag names (replace search)
+    content.querySelectorAll('.sidebar-tag-name').forEach(el => {
         el.addEventListener('click', async () => {
+            const tag = el.closest('.sidebar-tag').dataset.tag;
             const { filterByTag } = await import('./posts.js');
-            filterByTag(el.dataset.tag);
+            filterByTag(tag);
         });
     });
+    
+    // Attach handlers for add button
+    content.querySelectorAll('.tag-action-add').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const tag = btn.dataset.tag;
+            await appendTagToSearch(tag);
+        });
+    });
+    
+    // Attach handlers for negate button
+    content.querySelectorAll('.tag-action-negate').forEach(btn => {
+        btn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            const tag = btn.dataset.tag;
+            await appendTagToSearch(`-${tag}`);
+        });
+    });
+}
+
+function extractSearchedTags(search) {
+    if (!search) return [];
+    
+    // Extract plain tags and tag: filters
+    const tags = [];
+    const tokens = search.split(/\s+/);
+    
+    tokens.forEach(token => {
+        // Remove negation prefixes
+        let clean = token.replace(/^[-!]/, '').replace(/^(exclude|remove|negate|not):/, '');
+        
+        // Remove field prefix if present
+        clean = clean.replace(/^tag:/, '');
+        
+        // Remove wildcards for matching
+        clean = clean.replace(/\*/g, '');
+        
+        // Remove OR syntax
+        clean = clean.replace(/[()|\~,]/g, '');
+        
+        if (clean && !clean.includes(':')) {
+            tags.push(clean.toLowerCase());
+        }
+    });
+    
+    return tags;
+}
+
+async function appendTagToSearch(tag) {
+    const searchInput = document.getElementById('postsSearchInput');
+    if (!searchInput) return;
+    
+    const current = searchInput.value.trim();
+    const newSearch = current ? `${current} ${tag}` : tag;
+    
+    searchInput.value = newSearch;
+    
+    // Trigger search
+    const { performSearch } = await import('./posts.js');
+    performSearch();
 }
 
 // Sort by matching tags
@@ -180,7 +263,7 @@ export function sortByTagMatching(posts, searchQuery, blacklist = []) {
     });
 }
 
-// Card size scaling - IMPROVED with better range and no overlap
+// Card size scaling - IMPROVED with larger defaults and better text scaling
 let cardSizeScale = 1.0;
 
 export function setCardSize(scale) {
@@ -197,10 +280,50 @@ export function setCardSize(scale) {
         grid.style.gap = `${Math.max(8, 12 * cardSizeScale)}px`; // Scale gap too
     }
     
-    // Remove individual card transforms - let grid handle sizing
+    // Scale text and buttons with card size - LARGER BASE SIZES
+    const textScale = Math.max(0.8, Math.min(1.5, cardSizeScale));
+    const buttonScale = Math.max(0.85, Math.min(1.3, cardSizeScale));
+    
     document.querySelectorAll('.gallery-item').forEach(card => {
-        card.style.transform = 'none';
         card.style.width = `${scaledWidth}px`;
+        
+        // Scale all text elements - using larger base sizes
+        const info = card.querySelector('.gallery-item-info');
+        if (info) {
+            info.style.fontSize = `${13 * textScale}px`; // was 11px
+        }
+        
+        // Scale title
+        const title = card.querySelector('.gallery-item-title');
+        if (title) {
+            title.style.fontSize = `${13 * textScale}px`; // was 11px
+        }
+        
+        // Scale owner
+        const owner = card.querySelector('.gallery-item-owner');
+        if (owner) {
+            owner.style.fontSize = `${12 * textScale}px`; // was 10px
+        }
+        
+        // Scale ID/info
+        const idEl = card.querySelector('.gallery-item-id');
+        if (idEl) {
+            idEl.style.fontSize = `${11 * textScale}px`; // was 10px
+        }
+        
+        // Scale buttons
+        const buttons = card.querySelectorAll('button');
+        buttons.forEach(btn => {
+            btn.style.fontSize = `${11 * buttonScale}px`; // was 10px
+            btn.style.padding = `${8 * buttonScale}px`;   // was 6px
+        });
+        
+        // Scale tags
+        const tags = card.querySelectorAll('.tag');
+        tags.forEach(tag => {
+            tag.style.fontSize = `${10 * textScale}px`;   // was 9px
+            tag.style.padding = `${3 * textScale}px ${6 * textScale}px`; // was 2px 5px
+        });
     });
 }
 

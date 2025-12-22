@@ -14,10 +14,21 @@
     display: block;
 }
 
+/* Prevent body scroll when modal is open */
+body.modal-open {
+    overflow: hidden;
+}
+
 .modal-content {
-    max-width: 1200px;
-    margin: 40px auto;
+    max-width: 1400px;
+    margin: 20px auto;
     padding: 20px;
+    position: relative;
+}
+
+/* Yellow tint for pending posts */
+.modal-content.pending-post {
+    background: rgba(234, 179, 8, 0.05);
 }
 
 .modal-media-container {
@@ -26,28 +37,38 @@
     justify-content: center;
     align-items: center;
     margin-bottom: 20px;
+    background: #000;
+    border-radius: 8px;
+    overflow: hidden;
 }
 
 .modal-nav {
     position: fixed;
     top: 50%;
     transform: translateY(-50%);
-    background: rgba(16, 185, 129, 0.8);
+    background: rgba(16, 185, 129, 0.9);
     color: white;
-    width: 50px;
-    height: 50px;
-    border-radius: 50%;
+    width: 60px;
+    height: 120px;
+    border-radius: 8px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 24px;
+    font-size: 32px;
+    font-weight: bold;
     cursor: pointer;
-    transition: background 0.3s;
+    transition: all 0.3s ease;
     z-index: 10;
+    opacity: 0;
+}
+
+.modal-content:hover .modal-nav {
+    opacity: 1;
 }
 
 .modal-nav:hover {
     background: var(--accent);
+    transform: translateY(-50%) scale(1.05);
 }
 
 .modal-nav.prev {
@@ -60,66 +81,90 @@
 
 .modal-media {
     max-width: 100%;
-    max-height: 70vh;
+    max-height: 80vh;
     object-fit: contain;
+    cursor: zoom-in;
+    border-radius: 8px;
+}
+
+.modal-media.zoomed {
+    cursor: zoom-out;
+    max-width: none;
+    max-height: none;
+    width: auto;
+    height: auto;
 }
 
 .modal-info {
     background: var(--bg-panel);
     border-radius: 8px;
-    padding: 20px;
+    padding: 25px;
     color: var(--txt-main);
+    font-size: 15px;
 }
 
 .modal-info h3 {
     color: var(--accent);
-    margin-bottom: 15px;
+    margin-bottom: 20px;
+    font-size: 24px;
+}
+
+/* Actions at top */
+.modal-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+    padding-bottom: 20px;
+    border-bottom: 2px solid var(--border-main);
+}
+
+.modal-actions button {
+    flex: 1;
+    min-width: 140px;
+    padding: 14px 20px;
+    font-size: 15px;
 }
 
 .modal-info-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 15px;
-    margin-bottom: 15px;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 18px;
+    margin-bottom: 20px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--border-main);
 }
 
 .modal-info-item {
-    font-size: 13px;
+    font-size: 15px;
+    line-height: 1.6;
 }
 
 .modal-info-item strong {
-    color: var(--txt-muted);
+    color: var(--accent);
+    display: block;
+    margin-bottom: 4px;
 }
 
 .modal-tags {
     display: flex;
     flex-wrap: wrap;
-    gap: 8px;
-    margin-bottom: 15px;
+    gap: 10px;
+    margin-bottom: 20px;
 }
 
 .modal-tags .tag {
     background: var(--border-main);
-    padding: 5px 10px;
-    border-radius: 4px;
-    font-size: 12px;
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-size: 13px;
     cursor: pointer;
     transition: background 0.2s;
+    font-weight: 500;
 }
 
 .modal-tags .tag:hover {
     background: var(--accent);
-}
-
-.modal-actions {
-    display: flex;
-    gap: 10px;
-    flex-wrap: wrap;
-}
-
-.modal-actions button {
-    flex: 1;
-    min-width: 120px;
 }
 
 .modal-media-container .video-duration {
@@ -128,12 +173,12 @@
     right: 20px;
     background: rgba(0, 0, 0, 0.9);
     color: white;
-    padding: 6px 12px;
-    border-radius: 6px;
-    font-size: 16px;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 18px;
     font-weight: 600;
     z-index: 10;
-    min-width: 60px;
+    min-width: 70px;
     text-align: center;
 }
 
@@ -148,18 +193,20 @@
     right: 20px;
     background: var(--accent);
     color: white;
-    width: 40px;
-    height: 40px;
+    width: 50px;
+    height: 50px;
     border-radius: 50%;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 24px;
+    font-size: 28px;
     cursor: pointer;
     transition: background 0.3s;
     z-index: 1001;
+    font-weight: bold;
 }
 
 .modal-close:hover {
     background: var(--accent-strong);
+    transform: scale(1.1);
 }

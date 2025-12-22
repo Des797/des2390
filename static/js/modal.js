@@ -11,8 +11,23 @@ function showFullMedia(postId) {
     if (index === -1) return;
     
     state.currentModalIndex = index;
-    displayModalPost(posts[index]);
-    document.getElementById(ELEMENT_IDS.IMAGE_MODAL).classList.add(CSS_CLASSES.SHOW);
+    const post = posts[index];
+    
+    displayModalPost(post);
+    
+    const modal = document.getElementById(ELEMENT_IDS.IMAGE_MODAL);
+    modal.classList.add(CSS_CLASSES.SHOW);
+    
+    // Prevent body scroll
+    document.body.classList.add('modal-open');
+    
+    // Add tint for pending posts
+    const modalContent = modal.querySelector('.modal-content');
+    if (post.status === 'pending') {
+        modalContent.classList.add('pending-post');
+    } else {
+        modalContent.classList.remove('pending-post');
+    }
 }
 
 function displayModalPost(post) {
@@ -30,6 +45,19 @@ function displayModalPost(post) {
         video.style.display = 'none';
         img.style.display = 'block';
         img.src = mediaUrl;
+        
+        // Setup zoom functionality
+        let zoomed = false;
+        img.onclick = () => {
+            zoomed = !zoomed;
+            if (zoomed) {
+                img.classList.add('zoomed');
+                img.style.cursor = 'zoom-out';
+            } else {
+                img.classList.remove('zoomed');
+                img.style.cursor = 'zoom-in';
+            }
+        };
     }
     
     // Render modal content using renderer
@@ -46,11 +74,34 @@ function navigateModal(direction) {
 }
 
 function closeModal() {
-    document.getElementById(ELEMENT_IDS.IMAGE_MODAL).classList.remove(CSS_CLASSES.SHOW);
+    const modal = document.getElementById(ELEMENT_IDS.IMAGE_MODAL);
+    modal.classList.remove(CSS_CLASSES.SHOW);
+    
+    // Restore body scroll
+    document.body.classList.remove('modal-open');
+    
     const video = document.getElementById(ELEMENT_IDS.MODAL_VIDEO);
     video.pause();
     video.src = '';
+    
+    // Reset image zoom
+    const img = document.getElementById(ELEMENT_IDS.MODAL_IMAGE);
+    img.classList.remove('zoomed');
+    img.onclick = null;
 }
+
+// Setup click-outside-to-close
+document.addEventListener('DOMContentLoaded', () => {
+    const modal = document.getElementById(ELEMENT_IDS.IMAGE_MODAL);
+    if (modal) {
+        modal.addEventListener('click', (e) => {
+            // Close if clicking on modal background (not content)
+            if (e.target === modal) {
+                closeModal();
+            }
+        });
+    }
+});
 
 // Global functions for modal buttons (since they use inline onclick)
 window.modalSavePost = async (postId) => {
