@@ -854,14 +854,15 @@ def create_routes(app, config, services):
                 f"sort={sort_by} {order}, search='{search_query}'"
             )
             
-            # Get data using service with ALL parameters
+            # CRITICAL: Pass search_query to service
+            logger.info(f"Calling post_service.get_posts with search_query='{search_query}'")
             result = post_service.get_posts(
                 filter_type=filter_type,
                 limit=limit,
                 offset=offset,
                 sort_by=sort_by,
                 order=order,
-                search_query=search_query if search_query else None
+                search_query=search_query if search_query else None  # Pass search!
             )
             
             # Add sort/search info to response
@@ -871,7 +872,7 @@ def create_routes(app, config, services):
             
             logger.info(
                 f"Returning {len(result['posts'])} posts, total={result['total']} "
-                f"(sorted by {sort_by} {order})"
+                f"(sorted by {sort_by} {order}, search='{search_query}')"
             )
             
             return jsonify(result)

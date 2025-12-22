@@ -99,6 +99,7 @@ class PostCacheRepository:
             search_query: Advanced query with full frontend syntax support
         """
         try:
+            logger.info(f"[PostCacheRepository] get_cached_posts called with search_query='{search_query}'")
             translator = get_query_translator()
             
             with self.core.get_connection() as conn:
@@ -107,7 +108,10 @@ class PostCacheRepository:
                     logger.info(f"[PostCacheRepository] Using QueryTranslator for search_query: '{search_query}'")
                     where_clause, params = translator.translate(search_query, status)
                     query = f"SELECT * FROM post_cache WHERE {where_clause}"
+                    logger.info(f"[PostCacheRepository] Generated SQL: {query}")
+                    logger.info(f"[PostCacheRepository] Params: {params}")
                 else:
+                    logger.info(f"[PostCacheRepository] No search query, using simple status filter")
                     # No search query
                     if status:
                         query = "SELECT * FROM post_cache WHERE status = ?"
@@ -171,6 +175,7 @@ class PostCacheRepository:
                     'duration': row[15] if len(row) > 15 else None
                 })
             
+            logger.info(f"[PostCacheRepository] Returning {len(posts)} posts")
             return posts
         except Exception as e:
             logger.error(f"Failed to get cached posts: {e}", exc_info=True)

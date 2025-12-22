@@ -45,7 +45,7 @@ class QueryTranslator:
     
     def __init__(self):
         self.exclusion_prefixes = ['-', '!', 'exclude:', 'remove:', 'negate:', 'not:']
-        logger.warning("query translator initialized")
+        logger.info("QueryTranslator initialized")
     
     def translate(self, query: str, status: Optional[str] = None) -> Tuple[str, List[Any]]:
         logger.info(f"[QueryTranslator] Translating query: '{query}' with status='{status}'")
