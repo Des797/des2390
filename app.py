@@ -2,7 +2,10 @@ import logging
 import signal
 import sys
 import threading
-from flask import Flask
+from flask import Flask, request, abort
+import os
+from dotenv import load_dotenv
+load_dotenv()
 
 # Import configuration
 from config import get_config
@@ -36,6 +39,45 @@ logger = logging.getLogger(__name__)
 # Initialize Flask app
 app = Flask(__name__)
 app.secret_key = app_config.SECRET_KEY
+app.config['SESSION_COOKIE_SECURE'] = app_config.SESSION_COOKIE_SECURE
+app.config['SESSION_COOKIE_HTTPONLY'] = app_config.SESSION_COOKIE_HTTPONLY
+app.config['SESSION_COOKIE_SAMESITE'] = app_config.SESSION_COOKIE_SAMESITE
+app.config['PERMANENT_SESSION_LIFETIME'] = app_config.PERMANENT_SESSION_LIFETIME
+
+# Network security middleware
+@app.before_request
+def check_network_access():
+    """Restrict access to local network only if configured"""
+    if app_config.REQUIRE_LOCAL_NETWORK:
+        client_ip = request.remote_addr
+        
+        # Allow localhost
+        if client_ip in ['127.0.0.1', 'localhost', '::1']:
+            return None
+        
+        # Check if IP is from local network
+        if not app_config.is_local_network_ip(client_ip):
+            logger.warning(f"Blocked access attempt from non-local IP: {client_ip}")
+            abort(403)
+        
+    # Check allowed hosts if configured
+    if app_config.ALLOWED_HOSTS:
+        host = request.host.split(':')[0]
+        if host not in app_config.ALLOWED_HOSTS and host not in ['127.0.0.1', 'localhost']:
+            logger.warning(f"Blocked access attempt to non-allowed host: {host}")
+            abort(403)
+    
+    return None
+
+# Security headers
+@app.after_request
+def add_security_headers(response):
+    """Add security headers to all responses"""
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    return response
 
 # Initialize Elasticsearch (optional)
 es = None
@@ -234,6 +276,7 @@ if __name__ == "__main__":
     print("🚀 Server is starting...")
     print("📊 Database sync running in background (non-blocking)")
     print("🌐 Server will be responsive immediately")
+    print("🔒 Network access restricted to local network only")
     print("="*60 + "\n")
     
     try:
