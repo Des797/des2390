@@ -133,21 +133,83 @@ function attachPostEventListeners() {
 }
 
 /**
- * Attach media error handling after posts are rendered
+ * Attach media error handling with automatic extension fallback
  */
 function setupMediaErrorHandlers() {
-    // Image thumbnails (including video thumbnails)
+    // Image elements
     document.querySelectorAll('.gallery-item-media img').forEach(img => {
-        img.addEventListener('error', () => {
-            img.style.opacity = '0.5';
-            console.warn(`Image/thumbnail failed to load for post ${img.dataset.postId}`);
+        img.addEventListener('error', async () => {
+            const postId = img.dataset.postId;
+            const currentSrc = img.src;
+
+            console.warn(`[Media] Image failed: ${currentSrc} (post ${postId})`);
+
+            const extensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp'];
+            const urlObj = new URL(currentSrc);
+            const pathParts = urlObj.pathname.split('.');
+            if (pathParts.length < 2) return;
+
+            const currentExt = '.' + pathParts.pop();
+            const basePath = pathParts.join('.');
+
+            for (const ext of extensions) {
+                if (ext.toLowerCase() === currentExt.toLowerCase()) continue;
+
+                const alternativeUrl = `${urlObj.origin}${basePath}${ext}`;
+                try {
+                    const res = await fetch(alternativeUrl, { method: 'HEAD' });
+                    if (res.ok) {
+                        console.log(`[Media] Found alternative: ${alternativeUrl}`);
+                        img.src = alternativeUrl;
+
+                        const post = state.allPosts.find(p => p.id === parseInt(postId));
+                        if (post) post.file_type = ext;
+                        return;
+                    }
+                } catch (err) { /* ignore */ }
+            }
+
+            // All attempts failed
+            img.style.opacity = '0.3';
+            img.style.filter = 'grayscale(100%)';
+            console.error(`[Media] All attempts failed for post ${postId}`);
         });
     });
 
     // Video elements
     document.querySelectorAll('.gallery-item-media video').forEach(video => {
-        video.addEventListener('error', () => {
-            console.warn(`Video failed to load for post ${video.dataset.postId}`);
+        video.addEventListener('error', async () => {
+            const postId = video.dataset.postId;
+            const currentSrc = video.src;
+
+            console.warn(`[Media] Video failed: ${currentSrc} (post ${postId})`);
+
+            const extensions = ['.mp4', '.webm'];
+            const urlObj = new URL(currentSrc);
+            const pathParts = urlObj.pathname.split('.');
+            if (pathParts.length < 2) return;
+
+            const currentExt = '.' + pathParts.pop();
+            const basePath = pathParts.join('.');
+
+            for (const ext of extensions) {
+                if (ext.toLowerCase() === currentExt.toLowerCase()) continue;
+
+                const alternativeUrl = `${urlObj.origin}${basePath}${ext}`;
+                try {
+                    const res = await fetch(alternativeUrl, { method: 'HEAD' });
+                    if (res.ok) {
+                        console.log(`[Media] Found alternative video: ${alternativeUrl}`);
+                        video.src = alternativeUrl;
+
+                        const post = state.allPosts.find(p => p.id === parseInt(postId));
+                        if (post) post.file_type = ext;
+                        return;
+                    }
+                } catch (err) { /* ignore */ }
+            }
+
+            console.error(`[Media] All attempts failed for video post ${postId}`);
         });
     });
 }

@@ -66,7 +66,7 @@ class FileManager:
             return None
     
     def get_pending_posts(self) -> List[Dict[str, Any]]:
-        """Get all pending posts from temp directory - HIGHLY OPTIMIZED"""
+        """Get all pending posts from temp directory - HIGHLY OPTIMIZED WITH FILE VERIFICATION"""
         if not self.temp_path or not os.path.exists(self.temp_path):
             return []
         
@@ -85,6 +85,21 @@ class FileManager:
         
         logger.info(f"Found {len(json_files)} pending post files")
         
+        # Build a map of actual files (for extension verification)
+        file_map = {}
+        for entry in entries:
+            if entry.is_file() and not entry.name.endswith('.json'):
+                # Extract post_id from filename
+                base_name = entry.name.rsplit('.', 1)[0]
+                try:
+                    post_id = int(base_name.split('_')[0])  # Handle _thumb suffix
+                    if post_id not in file_map or '_thumb' not in entry.name:
+                        # Prefer non-thumb files
+                        if '_thumb' not in entry.name:
+                            file_map[post_id] = entry.name
+                except ValueError:
+                    continue
+        
         # Optimized loader with minimal overhead
         def load_post_fast(filename):
             json_path = os.path.join(self.temp_path, filename)
@@ -95,6 +110,23 @@ class FileManager:
                     post_data = json.load(f)
                     post_data['timestamp'] = stat.st_mtime
                     post_data['status'] = 'pending'
+                    
+                    # CRITICAL FIX: Verify file_type matches actual file
+                    post_id = post_data.get('id')
+                    if post_id and post_id in file_map:
+                        actual_filename = file_map[post_id]
+                        actual_ext = os.path.splitext(actual_filename)[1]
+                        stored_ext = post_data.get('file_type', '')
+                        
+                        # Fix extension mismatch
+                        if actual_ext.lower() != stored_ext.lower():
+                            logger.warning(
+                                f"Post {post_id}: Metadata says {stored_ext}, actual file is {actual_ext}"
+                            )
+                            post_data['file_type'] = actual_ext
+                            post_data['file_path'] = os.path.join(self.temp_path, actual_filename)
+                            post_data['_metadata_corrected'] = True
+                    
                     # Duration will be calculated on-demand, not stored
                     if 'duration' not in post_data:
                         post_data['duration'] = None
@@ -124,7 +156,7 @@ class FileManager:
         return pending
     
     def get_saved_posts(self) -> List[Dict[str, Any]]:
-        """Get all saved posts from save directory - OPTIMIZED"""
+        """Get all saved posts from save directory - OPTIMIZED WITH FILE VERIFICATION"""
         if not self.save_path or not os.path.exists(self.save_path):
             return []
         
@@ -133,8 +165,10 @@ class FileManager:
         
         # Get all date folders
         try:
-            date_folders = [f for f in os.listdir(self.save_path) 
-                           if os.path.isdir(os.path.join(self.save_path, f))]
+            date_folders = [
+                f for f in os.listdir(self.save_path)
+                if os.path.isdir(os.path.join(self.save_path, f))
+            ]
         except Exception as e:
             logger.error(f"Failed to list save directory: {e}")
             return []
@@ -149,7 +183,21 @@ class FileManager:
             folder_posts = []
             
             try:
-                json_files = [f for f in os.listdir(folder_path) if f.endswith(".json")]
+                entries = list(os.scandir(folder_path))
+                file_map = {}
+                json_files = []
+                
+                for entry in entries:
+                    if entry.is_file():
+                        if entry.name.endswith('.json'):
+                            json_files.append(entry.name)
+                        elif '_thumb' not in entry.name:
+                            base_name = entry.name.rsplit('.', 1)[0]
+                            try:
+                                post_id = int(base_name)
+                                file_map[post_id] = entry.name
+                            except ValueError:
+                                continue
             except Exception as e:
                 logger.error(f"Failed to list folder {date_folder}: {e}")
                 return []
@@ -159,38 +207,80 @@ class FileManager:
                 try:
                     with open(json_path, 'r') as f:
                         post_data = json.load(f)
-                        post_data['timestamp'] = os.path.getmtime(json_path)
-                        post_data['date_folder'] = date_folder
-                        post_data['status'] = 'saved'
-                        
-                        # Duration will be calculated on-demand
-                        if 'duration' not in post_data:
-                            post_data['duration'] = None
-                        
-                        # Ensure file_path is set
-                        post_id = post_data['id']
+
+                    metadata_changed = False
+
+                    post_data['timestamp'] = os.path.getmtime(json_path)
+                    post_data['date_folder'] = date_folder
+                    post_data['status'] = 'saved'
+
+                    if 'duration' not in post_data:
+                        post_data['duration'] = None
+
+                    post_id = post_data.get('id')
+
+                    if post_id and post_id in file_map:
+                        actual_filename = file_map[post_id]
+                        actual_ext = os.path.splitext(actual_filename)[1]
+                        stored_ext = post_data.get('file_type', '')
+
+                        if actual_ext.lower() != stored_ext.lower():
+                            logger.warning(
+                                f"Post {post_id}: Metadata says {stored_ext}, actual file is {actual_ext}"
+                            )
+                            post_data['file_type'] = actual_ext
+                            metadata_changed = True
+
+                        correct_path = os.path.join(folder_path, actual_filename)
+                        if post_data.get('file_path') != correct_path:
+                            post_data['file_path'] = correct_path
+                            metadata_changed = True
+                    else:
                         file_ext = post_data.get('file_type', '.jpg')
-                        post_data['file_path'] = os.path.join(folder_path, f"{post_id}{file_ext}")
-                        
-                        folder_posts.append(post_data)
+                        fallback_path = os.path.join(folder_path, f"{post_id}{file_ext}")
+                        if post_data.get('file_path') != fallback_path:
+                            post_data['file_path'] = fallback_path
+                            metadata_changed = True
+
+                    if metadata_changed:
+                        post_data.pop('_metadata_corrected', None)
+                        try:
+                            with open(json_path, 'w') as f:
+                                json.dump(post_data, f, indent=2)
+                            logger.info(f"Persisted corrected metadata for saved post {post_id}")
+                        except Exception as e:
+                            logger.error(f"Failed to persist metadata for saved post {post_id}: {e}")
+
+                    folder_posts.append(post_data)
+
                 except Exception as e:
                     logger.error(f"Failed to load saved post {filename}: {e}")
             
             return folder_posts
         
-        # Load folders in parallel
+        # 🔧 FIX: execute folder loaders and collect results
         with ThreadPoolExecutor(max_workers=10) as executor:
-            futures = [executor.submit(load_folder_posts, folder) for folder in date_folders]
+            futures = [
+                executor.submit(load_folder_posts, folder)
+                for folder in date_folders
+            ]
+            
             for i, future in enumerate(as_completed(futures), 1):
-                folder_posts = future.result()
-                saved.extend(folder_posts)
+                try:
+                    folder_posts = future.result()
+                    saved.extend(folder_posts)
+                except Exception as e:
+                    logger.error(f"Folder load task failed: {e}")
                 
-                # Log progress for large datasets
                 if i % 10 == 0 or i == len(date_folders):
-                    logger.info(f"Processed {i}/{len(date_folders)} folders, {len(saved)} posts so far")
+                    logger.info(
+                        f"Processed {i}/{len(date_folders)} folders, "
+                        f"{len(saved)} posts so far"
+                    )
         
         load_time = time.time() - start_time
         logger.info(f"Loaded {len(saved)} saved posts in {load_time:.2f}s")
+        
         return saved
     
     def get_all_posts(self) -> List[Dict[str, Any]]:
@@ -253,6 +343,15 @@ class FileManager:
             # Load post data
             with open(json_path, 'r') as f:
                 post_data = json.load(f)
+
+            if post_data.pop('_metadata_corrected', False):
+                try:
+                    with open(json_path, 'w') as f:
+                        json.dump(post_data, f, indent=2)
+                    logger.info(f"Persisted corrected metadata for post {post_id}")
+                except Exception as e:
+                    logger.error(f"Failed to persist metadata for post {post_id}: {e}")
+                    return False
             
             # Create date folder
             date_folder = datetime.now().strftime("%m.%d.%Y")
@@ -260,13 +359,31 @@ class FileManager:
             self.ensure_directory(target_dir)
             
             # Get file path - use EXACT match, not prefix
-            file_ext = post_data.get('file_type', '.jpg')
-            expected_filename = f"{post_id}{file_ext}"
-            file_path = os.path.join(self.temp_path, expected_filename)
-            
-            if not os.path.exists(file_path):
-                logger.error(f"File not found for post {post_id}: {file_path}")
+            file_path = post_data.get("file_path")
+
+            if not file_path:
+                logger.error(f"No file_path in post data for {post_id}")
                 return False
+
+            # Resolve relative paths
+            if not os.path.isabs(file_path):
+                file_path = os.path.join(self.temp_path, file_path)
+
+            # Fallback for legacy naming
+            if not os.path.exists(file_path):
+                file_ext = post_data.get('file_type', '.jpg')
+                alt_path = os.path.join(self.temp_path, f"{post_id}{file_ext}")
+
+                if os.path.exists(alt_path):
+                    logger.info(f"Found file at fallback path: {alt_path}")
+                    file_path = alt_path
+                else:
+                    logger.error(f"File not found for post {post_id}: {file_path}")
+                    logger.error(f"Also tried: {alt_path}")
+                    return False
+
+            file_ext = post_data.get('file_type', os.path.splitext(file_path)[1])
+            expected_filename = f"{post_id}{file_ext}"
             
             # Move files
             target_file = os.path.join(target_dir, expected_filename)
@@ -279,7 +396,8 @@ class FileManager:
             
             # Move thumbnail if exists
             thumb_filename = f"{post_id}_thumb.jpg"
-            thumb_path = os.path.join(self.temp_path, '.thumbnails', thumb_filename)
+            media_dir = os.path.dirname(file_path)
+            thumb_path = os.path.join(media_dir, '.thumbnails', thumb_filename)
             
             if os.path.exists(thumb_path):
                 target_thumb_dir = os.path.join(target_dir, '.thumbnails')
@@ -324,6 +442,10 @@ class FileManager:
             
             # Delete media file with retry logic
             file_path = post_data.get("file_path")
+            if file_path:
+                if not os.path.isabs(file_path):
+                    file_path = os.path.join(self.temp_path, file_path)
+
             if file_path and os.path.exists(file_path):
                 # Try multiple times with increasing delay
                 deleted = False
@@ -422,10 +544,10 @@ class FileManager:
         """Get file size for a post"""
         # Check temp directory
         if self.temp_path and os.path.exists(self.temp_path):
-            for filename in os.listdir(self.temp_path):
-                if filename.startswith(str(post_id)) and not filename.endswith('.json'):
-                    file_path = os.path.join(self.temp_path, filename)
-                    return os.path.getsize(file_path)
+            for root, _, files in os.walk(self.temp_path):
+                for filename in files:
+                    if filename.startswith(str(post_id)) and not filename.endswith('.json'):
+                        return os.path.getsize(os.path.join(root, filename))
         
         # Check save directory
         if self.save_path and os.path.exists(self.save_path):

@@ -76,6 +76,87 @@ def create_routes(app, config, services):
             "message": "Server is running"
         })
 
+    @app.route("/temp/<path:filename>")
+    @login_required
+    def serve_temp(filename):
+        """
+        Serve a temp file. If not found, attempt to fix metadata for the corresponding post.
+        """
+        try:
+            file_path = os.path.join(file_manager.temp_path, filename)
+            if os.path.exists(file_path):
+                return send_from_directory(file_manager.temp_path, filename)
+
+            # Extract post_id from filename
+            base_name = os.path.splitext(os.path.basename(filename))[0]
+            try:
+                post_id = int(base_name)
+            except ValueError:
+                return jsonify({"error": "File not found"}), 404
+
+            logger.warning(f"File {filename} missing. Attempting to fix post {post_id}...")
+
+            # Attempt to fix JSON metadata
+            json_path = os.path.join(file_manager.temp_path, f"{post_id}.json")
+            if not os.path.exists(json_path) and file_manager.save_path:
+                # Try saved folders
+                for date_folder in os.listdir(file_manager.save_path):
+                    folder_path = os.path.join(file_manager.save_path, date_folder)
+                    candidate = os.path.join(folder_path, f"{post_id}.json")
+                    if os.path.exists(candidate):
+                        json_path = candidate
+                        break
+
+            if not os.path.exists(json_path):
+                return jsonify({"error": "File and metadata not found"}), 404
+
+            with open(json_path, 'r') as f:
+                post_data = json.load(f)
+
+            # Try to find actual media file in temp
+            found_file = None
+            for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.mp4', '.webm']:
+                candidate = os.path.join(file_manager.temp_path, f"{post_id}{ext}")
+                if os.path.exists(candidate):
+                    found_file = candidate
+                    post_data['file_type'] = ext
+                    break
+
+            # If not in temp, check saved directories
+            if not found_file and file_manager.save_path:
+                for date_folder in os.listdir(file_manager.save_path):
+                    folder_path = os.path.join(file_manager.save_path, date_folder)
+                    for ext in ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.mp4', '.webm']:
+                        candidate = os.path.join(folder_path, f"{post_id}{ext}")
+                        if os.path.exists(candidate):
+                            found_file = candidate
+                            post_data['file_type'] = ext
+                            break
+                    if found_file:
+                        break
+
+            if not found_file:
+                return jsonify({"error": "File not found after scanning"}), 404
+
+            # Update JSON metadata
+            with open(json_path, 'w') as f:
+                json.dump(post_data, f, indent=2)
+            logger.info(f"Fixed file_type for post {post_id} -> {post_data['file_type']}")
+
+            # Rebuild cache for this post
+            from database import Database
+            db = Database(config.DATABASE_PATH)
+            db.rebuild_cache_from_files(file_manager)
+            logger.info(f"Rebuilt cache for post {post_id}")
+
+            # Serve fixed file
+            relative_path = found_file.replace(file_manager.temp_path, '').lstrip(os.sep)
+            return send_from_directory(file_manager.temp_path, os.path.basename(found_file))
+
+        except Exception as e:
+            logger.error(f"Error serving temp file {filename}: {e}", exc_info=True)
+            return jsonify({"error": str(e)}), 500
+
     @app.route("/api/debug/init")
     @login_required
     def debug_init():
@@ -562,6 +643,113 @@ def create_routes(app, config, services):
             logger.error(f"Error getting count: {e}", exc_info=True)
             return jsonify({"error": str(e)}), 500
 
+    @app.route("/api/fix_file_types", methods=["POST"])
+    @login_required
+    def fix_file_types():
+        """Fix file_type mismatches between metadata and actual files"""
+        try:
+            fixed_count = 0
+            errors = []
+            
+            # Check temp directory
+            if file_manager.temp_path and os.path.exists(file_manager.temp_path):
+                entries = list(os.scandir(file_manager.temp_path))
+                file_map = {}
+                json_files = []
+                
+                for entry in entries:
+                    if entry.is_file():
+                        if entry.name.endswith('.json'):
+                            json_files.append(entry.name)
+                        elif '_thumb' not in entry.name:
+                            base_name = entry.name.rsplit('.', 1)[0]
+                            try:
+                                post_id = int(base_name)
+                                file_map[post_id] = entry.name
+                            except ValueError:
+                                continue
+                
+                for json_file in json_files:
+                    json_path = os.path.join(file_manager.temp_path, json_file)
+                    try:
+                        with open(json_path, 'r') as f:
+                            post_data = json.load(f)
+                        
+                        post_id = post_data.get('id')
+                        if post_id and post_id in file_map:
+                            actual_filename = file_map[post_id]
+                            actual_ext = os.path.splitext(actual_filename)[1]
+                            stored_ext = post_data.get('file_type', '')
+                            
+                            if actual_ext.lower() != stored_ext.lower():
+                                post_data['file_type'] = actual_ext
+                                with open(json_path, 'w') as f:
+                                    json.dump(post_data, f, indent=2)
+                                fixed_count += 1
+                                logger.info(f"Fixed post {post_id}: {stored_ext} -> {actual_ext}")
+                    except Exception as e:
+                        errors.append(f"Post {json_file}: {str(e)}")
+            
+            # Check saved directories
+            if file_manager.save_path and os.path.exists(file_manager.save_path):
+                for date_folder in os.listdir(file_manager.save_path):
+                    folder_path = os.path.join(file_manager.save_path, date_folder)
+                    if not os.path.isdir(folder_path):
+                        continue
+                    
+                    entries = list(os.scandir(folder_path))
+                    file_map = {}
+                    json_files = []
+                    
+                    for entry in entries:
+                        if entry.is_file():
+                            if entry.name.endswith('.json'):
+                                json_files.append(entry.name)
+                            elif '_thumb' not in entry.name:
+                                base_name = entry.name.rsplit('.', 1)[0]
+                                try:
+                                    post_id = int(base_name)
+                                    file_map[post_id] = entry.name
+                                except ValueError:
+                                    continue
+                    
+                    for json_file in json_files:
+                        json_path = os.path.join(folder_path, json_file)
+                        try:
+                            with open(json_path, 'r') as f:
+                                post_data = json.load(f)
+                            
+                            post_id = post_data.get('id')
+                            if post_id and post_id in file_map:
+                                actual_filename = file_map[post_id]
+                                actual_ext = os.path.splitext(actual_filename)[1]
+                                stored_ext = post_data.get('file_type', '')
+                                
+                                if actual_ext.lower() != stored_ext.lower():
+                                    post_data['file_type'] = actual_ext
+                                    with open(json_path, 'w') as f:
+                                        json.dump(post_data, f, indent=2)
+                                    fixed_count += 1
+                                    logger.info(f"Fixed post {post_id}: {stored_ext} -> {actual_ext}")
+                        except Exception as e:
+                            errors.append(f"Post {json_file}: {str(e)}")
+            
+            # Rebuild cache with fixed metadata
+            if fixed_count > 0:
+                from database import Database
+                db = Database(config.DATABASE_PATH)
+                db.rebuild_cache_from_files(file_manager)
+                logger.info(f"Rebuilt cache after fixing {fixed_count} file_type mismatches")
+            
+            return jsonify({
+                "success": True,
+                "fixed_count": fixed_count,
+                "errors": errors
+            })
+        except Exception as e:
+            logger.error(f"Fix file types failed: {e}", exc_info=True)
+            return jsonify({"success": False, "error": str(e)}), 500
+
     @app.route("/api/pending")
     @login_required
     def get_pending():
@@ -811,13 +999,6 @@ def create_routes(app, config, services):
         query = request.args.get('q', '')
         suggestions = autocomplete_service.get_suggestions(query)
         return jsonify(suggestions)
-    
-    # File serving routes
-    @app.route("/temp/<path:filename>")
-    @login_required
-    def serve_temp(filename):
-        logger.debug(f"Serving temp file: {filename}")
-        return send_from_directory(file_manager.temp_path, filename)
 
     @app.route("/saved/<date_folder>/<path:filename>")
     @login_required
