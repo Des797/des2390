@@ -1,6 +1,7 @@
 """
 Advanced Query Parser: Frontend Syntax → SQL Translator
 Supports all frontend query_parser.js functionality on the backend
+FIXED: Handles tags with parentheses like luke_(star_wars)
 """
 import re
 import logging
@@ -99,29 +100,64 @@ class QueryTranslator:
         return ast
     
     def _tokenize(self, query: str) -> List[str]:
-        """Tokenize query string"""
+        """
+        Tokenize query string
+        FIXED: Distinguishes between grouping parens and tag parens
+        
+        Strategy: Check OUTSIDE the parentheses for non-whitespace characters.
+        - If preceded by non-whitespace (like underscore): tag paren
+        - If followed by non-whitespace (like underscore): tag paren
+        - Exception: operators (: ! - ,) are not tag characters
+        - Otherwise: grouping paren for OR logic
+        """
+        # Characters that indicate grouping parens, not tag parens
+        operator_chars = {':', '!', '-', ',', '|', '~', ' '}
+        
         tokens = []
         buffer = ''
         paren_depth = 0
+        i = 0
         
-        for i, char in enumerate(query):
+        while i < len(query):
+            char = query[i]
+            
             if char == '(':
+                # Look at character immediately BEFORE the (
+                # If it exists and is non-whitespace AND not an operator, it's part of a tag
+                if buffer and buffer[-1] not in operator_chars:
+                    buffer += char
+                    i += 1
+                    continue
+                
+                # It's a grouping paren
                 if buffer.strip() and paren_depth == 0:
                     tokens.append(buffer.strip())
                     buffer = ''
                 paren_depth += 1
                 tokens.append('(')
+                
             elif char == ')':
+                # Look at character immediately AFTER the )
+                # If it exists and is non-whitespace AND not an operator, it's part of a tag
+                next_char = query[i + 1] if i + 1 < len(query) else None
+                if next_char and next_char not in operator_chars and next_char not in [')', '(']:
+                    buffer += char
+                    i += 1
+                    continue
+                
+                # It's a grouping paren
                 if buffer.strip():
                     tokens.append(buffer.strip())
                     buffer = ''
                 paren_depth -= 1
                 tokens.append(')')
+                
             elif (char in ['|', '~', ',']) and paren_depth > 0:
                 if buffer.strip():
                     tokens.append(buffer.strip())
                     buffer = ''
                 tokens.append('|')
+                
             elif char == ' ':
                 if paren_depth == 0:
                     if buffer.strip():
@@ -142,6 +178,8 @@ class QueryTranslator:
                             buffer += char
             else:
                 buffer += char
+            
+            i += 1
         
         if buffer.strip():
             tokens.append(buffer.strip())
@@ -296,13 +334,14 @@ class QueryTranslator:
         """Convert AST to SQL WHERE clause"""
         logger.debug(f"[Translator] Converting AST node to SQL: {node}")
         if node.type == 'FILTER':
-            return self._filter_to_sql(node)
+            sql, params = self._filter_to_sql(node)
         elif node.type == 'AND':
-            return self._and_to_sql(node)
+            sql, params = self._and_to_sql(node)
         elif node.type == 'OR':
-            return self._or_to_sql(node)
+            sql, params = self._or_to_sql(node)
         else:
-            return "1=1", []
+            sql, params = "1=1", []
+        
         logger.debug(f"[Translator] SQL fragment: {sql}, params: {params}")
         return sql, params
     

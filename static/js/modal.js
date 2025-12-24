@@ -1,4 +1,4 @@
-// Modal Functions
+// Modal Functions - FIXED owner filtering
 import { state } from './state.js';
 import { renderModalContent, getMediaUrl, isVideoFile } from './posts_renderer.js';
 import { attachModalTagListeners } from './event_handlers.js';
@@ -114,6 +114,7 @@ window.modalDiscardPost = async (postId) => {
     closeModal();
 };
 
+// FIXED: Use owner: prefix for proper filtering
 window.modalFilterByOwner = (owner) => {
     closeModal();
     filterByOwner(owner);

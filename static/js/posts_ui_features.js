@@ -90,10 +90,22 @@ export async function calculateTopTags(filter, search, limit = 50) {
 
 // Render tag sidebar with backend data
 export async function renderTagSidebar(filter, search) {
-    // Only show on Posts tab
+    // Only show on Posts tab - check both tab element and current state
+    const currentTab = document.querySelector('.nav-tab.active');
+    const isPostsTab = currentTab && currentTab.dataset.tab === 'posts';
+    
+    const existingSidebar = document.getElementById('tagSidebar');
+    
+    if (!isPostsTab) {
+        // Hide sidebar if not on posts tab
+        if (existingSidebar) {
+            existingSidebar.style.display = 'none';
+        }
+        return;
+    }
+    
     const postsTab = document.getElementById('postsTab');
     if (!postsTab || !postsTab.classList.contains('active')) {
-        const existingSidebar = document.getElementById('tagSidebar');
         if (existingSidebar) existingSidebar.style.display = 'none';
         return;
     }
@@ -128,10 +140,16 @@ export async function renderTagSidebar(filter, search) {
     const content = sidebar.querySelector('.sidebar-content');
 
     // Click header to collapse/expand
-    header.addEventListener('click', () => {
+    header.addEventListener('click', async () => {
         const nowCollapsed = sidebar.classList.toggle('collapsed');
         content.classList.toggle('hidden');
         localStorage.setItem('tagSidebarCollapsed', nowCollapsed);
+        
+        // Load tags when expanding if not already loaded
+        if (!nowCollapsed && content.querySelector('.sidebar-tag') === null) {
+            content.innerHTML = '<div style="color: var(--txt-muted); font-style: italic; padding: 10px;">Loading...</div>';
+            await loadTagsIntoSidebar(content, filter, search, searchedTags);
+        }
     });
     
     // Restore collapsed state
@@ -141,8 +159,16 @@ export async function renderTagSidebar(filter, search) {
         content.classList.add('hidden');
     }
     
-    if (isCollapsed || savedCollapsed) return; // Don't load tags if collapsed
+    // Only load tags if not collapsed
+    if (isCollapsed || savedCollapsed) {
+        return; // Don't load tags yet - will load on expand
+    }
     
+    // Load tags into sidebar
+    await loadTagsIntoSidebar(content, filter, search, searchedTags);
+}
+
+async function loadTagsIntoSidebar(content, filter, search, searchedTags) {
     const topTags = await calculateTopTags(filter, search, 50);
     
     if (topTags.length === 0) {
@@ -182,7 +208,7 @@ export async function renderTagSidebar(filter, search) {
         btn.addEventListener('click', async (e) => {
             e.stopPropagation();
             const tag = btn.dataset.tag;
-            await appendTagToSearch(tag);
+            await appendTagToSearch(`tag:${tag}`);
         });
     });
     
@@ -191,7 +217,7 @@ export async function renderTagSidebar(filter, search) {
         btn.addEventListener('click', async (e) => {
             e.stopPropagation();
             const tag = btn.dataset.tag;
-            await appendTagToSearch(`-${tag}`);
+            await appendTagToSearch(`-tag:${tag}`);
         });
     });
 
@@ -448,6 +474,15 @@ export function showTagDropdown(button, allTags) {
 // Initialize new UI features
 export function initPostsUI() {
     console.log('📱 Initializing posts UI features...');
+    
+    // Check if we're on the posts tab
+    const currentTab = document.querySelector('.nav-tab.active');
+    const isPostsTab = currentTab && currentTab.dataset.tab === 'posts';
+    
+    if (!isPostsTab) {
+        console.log('Not on posts tab, skipping UI initialization');
+        return;
+    }
     
     // Add card size control with better range
     const controls = document.querySelector('.gallery-controls');

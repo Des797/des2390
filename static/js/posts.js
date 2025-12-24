@@ -332,7 +332,6 @@ function toggleSortOrder() {
     loadPosts();
 }
 
-// Post actions (unchanged)
 async function savePostAction(postId) {
     try {
         await apiSavePost(postId);
@@ -348,19 +347,64 @@ async function savePostAction(postId) {
             }).replace(/\//g, '.');
         }
         
+        // If filtering by pending, remove from view
         if (state.postsStatusFilter === 'pending') {
             const postEl = document.querySelector(`[data-post-id="${postId}"]`);
             if (postEl) {
-                postEl.style.transition = 'opacity 0.3s';
+                postEl.style.transition = 'opacity 0.3s, transform 0.3s';
                 postEl.style.opacity = '0';
+                postEl.style.transform = 'scale(0.8)';
                 await new Promise(resolve => setTimeout(resolve, 300));
             }
             await removePostAndLoadNext(postId);
+        } else {
+            // If filtering by "all", update the post's visual status in place
+            const postEl = document.querySelector(`[data-post-id="${postId}"]`);
+            if (postEl) {
+                postEl.setAttribute('data-status', 'saved');
+                
+                // Update status badge
+                const statusBadge = postEl.querySelector('.gallery-item-id span[title]');
+                if (statusBadge) {
+                    statusBadge.style.background = '#10b981';
+                    statusBadge.textContent = 'S';
+                    statusBadge.title = 'Saved';
+                }
+                
+                // Update action buttons to saved post actions
+                const actions = postEl.querySelector('.gallery-item-actions');
+                if (actions) {
+                    const { renderPost } = await import('./posts_renderer.js');
+                    const sortBy = state.postsSortBy;
+                    const searchQuery = state.postsSearch;
+                    
+                    // Re-render just this post
+                    const newPostHtml = renderPost(post, sortBy, searchQuery);
+                    const tempDiv = document.createElement('div');
+                    tempDiv.innerHTML = newPostHtml;
+                    postEl.replaceWith(tempDiv.firstElementChild);
+                    
+                    // Re-attach event listeners
+                    attachPostEventListeners();
+                    setupMediaErrorHandlers();
+                    requestAnimationFrame(() => setupVideoPreviewListeners());
+                }
+                
+                // Visual feedback - flash green
+                postEl.style.transition = 'box-shadow 0.3s';
+                postEl.style.boxShadow = '0 0 20px rgba(16, 185, 129, 0.5)';
+                setTimeout(() => {
+                    postEl.style.boxShadow = '';
+                }, 1000);
+            }
         }
     } catch (error) {
         showNotification('Failed to save post - file may be locked', 'error');
         const postEl = document.querySelector(`[data-post-id="${postId}"]`);
-        if (postEl) postEl.style.opacity = '1';
+        if (postEl) {
+            postEl.style.opacity = '1';
+            postEl.style.transform = 'scale(1)';
+        }
     }
 }
 
@@ -553,18 +597,20 @@ function updateBulkControls() {
     }
 }
 
+// Filter helper functions - FIXED to use proper field prefixes
+
 function filterByTag(tag) {
-    const input = document.getElementById(ELEMENT_IDS.POSTS_SEARCH_INPUT);
-    input.value = tag;
-    state.postsSearch = tag;
+    const input = document.getElementById('postsSearchInput');
+    input.value = `tag:${tag}`;
+    state.postsSearch = `tag:${tag}`;
     state.postsPage = 1;
     loadPosts();
 }
 
 function filterByOwner(owner) {
-    const input = document.getElementById(ELEMENT_IDS.POSTS_SEARCH_INPUT);
-    input.value = owner;
-    state.postsSearch = owner;
+    const input = document.getElementById('postsSearchInput');
+    input.value = `owner:${owner}`;
+    state.postsSearch = `owner:${owner}`;
     state.postsPage = 1;
     loadPosts();
 }

@@ -13,6 +13,14 @@ function switchTab(tabName, updateURL = true) {
     document.querySelector(`.${CSS_CLASSES.NAV_TAB}[data-tab="${tabName}"]`).classList.add(CSS_CLASSES.ACTIVE);
     document.getElementById(`${tabName}Tab`).classList.add(CSS_CLASSES.ACTIVE);
     
+    // Hide tag sidebar when leaving posts tab
+    if (tabName !== TAB_NAMES.POSTS) {
+        const sidebar = document.getElementById('tagSidebar');
+        if (sidebar) {
+            sidebar.style.display = 'none';
+        }
+    }
+    
     // Update URL
     if (updateURL) {
         updateURLState({ [URL_PARAMS.TAB]: tabName });
