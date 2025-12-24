@@ -203,3 +203,104 @@
     font-weight: bold;
     font-size: 14px;
 }
+
+/* ==================== HOVER OVERLAY BUTTONS ==================== */
+
+/* Container for hover buttons - positioned over media */
+.gallery-item-media .hover-buttons {
+    position: absolute;
+    bottom: 2px;
+    left: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    z-index: 11;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+}
+
+/* Show buttons on media hover (desktop only) */
+@media (min-width: 769px) {
+    .gallery-item-media:hover .hover-buttons {
+        opacity: 1;
+        pointer-events: all;
+    }
+}
+
+/* Style for hover overlay buttons */
+.hover-buttons button {
+    padding: 1px 5px;
+    font-size: 21px;
+    font-weight: 600;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    transition: all 0.2s ease;
+    text-transform: none;
+    letter-spacing: 0;
+    min-width: 30px;
+    backdrop-filter: blur(4px);
+}
+
+.hover-buttons button:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0,0,0,0.6);
+}
+
+/* Hide card action buttons on desktop (shown in hover overlay instead) */
+@media (min-width: 769px) {
+    .gallery-item-actions {
+        display: none;
+    }
+}
+
+/* Keep card buttons visible on mobile */
+@media (max-width: 768px) {
+    .gallery-item-media .hover-buttons {
+        display: none !important;
+    }
+    
+    .gallery-item-actions {
+        display: flex !important;
+    }
+}
+
+/* Ensure video overlay play button fades on hover */
+.gallery-item-media .video-overlay {
+    transition: opacity 0.2s ease;
+}
+
+.gallery-item-media:hover .video-overlay {
+    opacity: 0.3;
+}
+
+/* Semi-transparent overlay background on hover to improve button visibility */
+.gallery-item-media::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.4);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    pointer-events: none;
+    z-index: 1;
+}
+
+@media (min-width: 769px) {
+    .gallery-item-media:hover::before {
+        opacity: 1;
+    }
+}
+
+/* Ensure select checkbox stays above overlay */
+.gallery-item-media .select-checkbox {
+    z-index: 12;
+}
+
+/* Ensure duration badge stays above overlay */
+.gallery-item-media .video-duration {
+    z-index: 12;
+}

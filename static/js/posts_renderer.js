@@ -402,7 +402,7 @@ function renderStatusBadge(status) {
 }
 
 /**
- * Render action buttons based on post status
+ * Render action buttons based on post status (for mobile/card view)
  */
 function renderActions(post) {
     if (post.status === POST_STATUS.PENDING) {
@@ -421,6 +421,28 @@ function renderActions(post) {
 }
 
 /**
+ * Render hover overlay action buttons (desktop only)
+ */
+function renderHoverActions(post) {
+    if (post.status === POST_STATUS.PENDING) {
+        return `
+            <div class="hover-buttons">
+                <button class="btn-success ${CSS_CLASSES.SAVE_BTN}" data-id="${post.id}">💾</button>
+                <button class="btn-secondary ${CSS_CLASSES.DISCARD_BTN}" data-id="${post.id}">🗑️</button>
+                <button class="btn-primary ${CSS_CLASSES.VIEW_R34_BTN}" data-id="${post.id}">🔗</button>
+            </div>
+        `;
+    }
+    
+    return `
+        <div class="hover-buttons">
+            <button class="btn-primary ${CSS_CLASSES.VIEW_R34_BTN}" data-id="${post.id}">🔗</button>
+            <button class="btn-danger ${CSS_CLASSES.DELETE_BTN}" data-id="${post.id}" data-folder="${post.date_folder}">🗑️</button>
+        </div>
+    `;
+}
+
+/**
  * Render a single post card with dynamic sizing
  */
 function renderPost(post, activeSort = '', activeSearch = '') {
@@ -431,6 +453,7 @@ function renderPost(post, activeSort = '', activeSearch = '') {
     const { tagsPreview, expandBtn } = renderTagsPreview(post);
     const cardInfo = renderCardInfo(post, activeSort, activeSearch);
     const actions = renderActions(post);
+    const hoverActions = renderHoverActions(post);  // NEW: Hover buttons
     const rowSpan = calculateRowSpan(post.width, post.height);
     
     // Determine media container class for border styling
@@ -448,6 +471,7 @@ function renderPost(post, activeSort = '', activeSearch = '') {
             <div class="${mediaClass}">
                 <div class="${CSS_CLASSES.SELECT_CHECKBOX} ${isSelected ? CSS_CLASSES.CHECKED : ''}" data-id="${post.id}"></div>
                 <div class="${CSS_CLASSES.MEDIA_WRAPPER}" data-id="${post.id}">${mediaHtml}</div>
+                ${hoverActions}
             </div>
             <div class="gallery-item-info">
                 ${titleHtml}${ownerHtml}
