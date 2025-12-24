@@ -5,7 +5,6 @@
     overflow: hidden;
 }
 
-/* Thumbnail outlines for different types */
 .gallery-item-media.media-deleted {
     border: 3px solid var(--danger);
 }
@@ -37,12 +36,10 @@
     z-index: 0;
 }
 
-/* When video is playing, ensure poster fades out */
 .gallery-item-media.media-video video[data-playing] ~ .video-poster {
     opacity: 0;
 }
 
-/* Force video poster to display */
 .gallery-item-media video {
     width: 100%;
     height: 100%;
@@ -52,7 +49,6 @@
     display: block;
 }
 
-/* Ensure poster shows before video loads */
 .gallery-item-media.media-video video:not([data-loaded]) {
     background-image: attr(poster);
     background-size: contain;
@@ -60,7 +56,6 @@
     background-repeat: no-repeat;
 }
 
-/* When video is playing, hide poster */
 .gallery-item-media.media-video video[data-playing] {
     object-fit: contain;
 }
@@ -75,7 +70,7 @@
     border-radius: 3px;
     font-size: 11px;
     font-weight: 600;
-    z-index: 2;
+    z-index: 12;
     pointer-events: none;
     min-width: 32px;
     text-align: center;
@@ -117,17 +112,6 @@
     background-color: #000;
 }
 
-.gallery-item-media.media-video {
-    position: relative;
-    background: #000;
-}
-
-.gallery-item-media.media-video video {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-}
-
 .gallery-item-media .video-overlay {
     position: absolute;
     top: 50%;
@@ -156,17 +140,8 @@
     opacity: 0;
 }
 
-.gallery-item-media .video-duration {
-    position: absolute;
-    bottom: 8px;
-    right: 8px;
-    background: rgba(0, 0, 0, 0.8);
-    color: white;
-    padding: 2px 6px;
-    border-radius: 3px;
-    font-size: 11px;
-    font-weight: 600;
-    z-index: 2;
+.gallery-item-media:hover .video-overlay {
+    opacity: 0.3;
 }
 
 .gallery-item-media video.preview-playing {
@@ -190,7 +165,14 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    z-index: 5;
+    z-index: 12;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.gallery-item-media:hover .select-checkbox,
+.gallery-item-media .select-checkbox.checked {
+    opacity: 1;
 }
 
 .gallery-item-media .select-checkbox.checked {
@@ -204,9 +186,6 @@
     font-size: 14px;
 }
 
-/* ==================== HOVER OVERLAY BUTTONS ==================== */
-
-/* Container for hover buttons - positioned over media */
 .gallery-item-media .hover-buttons {
     position: absolute;
     bottom: 2px;
@@ -220,7 +199,6 @@
     transition: opacity 0.2s ease;
 }
 
-/* Show buttons on media hover (desktop only) */
 @media (min-width: 769px) {
     .gallery-item-media:hover .hover-buttons {
         opacity: 1;
@@ -228,7 +206,6 @@
     }
 }
 
-/* Style for hover overlay buttons */
 .hover-buttons button {
     padding: 1px 5px;
     font-size: 21px;
@@ -247,34 +224,6 @@
     box-shadow: 0 6px 16px rgba(0,0,0,0.6);
 }
 
-/* Hide card action buttons on desktop (shown in hover overlay instead) */
-@media (min-width: 769px) {
-    .gallery-item-actions {
-        display: none;
-    }
-}
-
-/* Keep card buttons visible on mobile */
-@media (max-width: 768px) {
-    .gallery-item-media .hover-buttons {
-        display: none !important;
-    }
-    
-    .gallery-item-actions {
-        display: flex !important;
-    }
-}
-
-/* Ensure video overlay play button fades on hover */
-.gallery-item-media .video-overlay {
-    transition: opacity 0.2s ease;
-}
-
-.gallery-item-media:hover .video-overlay {
-    opacity: 0.3;
-}
-
-/* Semi-transparent overlay background on hover to improve button visibility */
 .gallery-item-media::before {
     content: '';
     position: absolute;
@@ -295,12 +244,12 @@
     }
 }
 
-/* Ensure select checkbox stays above overlay */
-.gallery-item-media .select-checkbox {
-    z-index: 12;
-}
-
-/* Ensure duration badge stays above overlay */
-.gallery-item-media .video-duration {
-    z-index: 12;
+@media (max-width: 768px) {
+    .gallery-item-media .hover-buttons {
+        display: none !important;
+    }
+    
+    .gallery-item-media .select-checkbox {
+        opacity: 1;
+    }
 }

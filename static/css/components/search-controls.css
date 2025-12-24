@@ -23,6 +23,20 @@
     color: var(--txt-main);
 }
 
+#postsSearchInput {
+    min-height: 40px;
+    max-height: 200px;
+    resize: vertical;
+    transition: min-height 0.2s ease;
+    overflow-y: auto;
+    font-family: inherit;
+    line-height: 1.4;
+}
+
+#postsSearchInput:focus {
+    min-height: 80px;
+}
+
 .search-dropdown {
     position: absolute;
     top: 100%;

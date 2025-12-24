@@ -36,6 +36,12 @@
 .bulk-actions button {
     padding: 10px 16px;
     font-size: 12px;
+    font-weight: 600;
+}
+
+#selectAllPosts,
+#clearSelectionPosts {
+    display: inline-block !important;
 }
 
 .bulk-progress {
@@ -76,4 +82,12 @@
     color: var(--txt-muted);
     display: flex;
     justify-content: space-between;
+}
+
+.discard-btn {
+    background: var(--danger) !important;
+}
+
+.discard-btn:hover:not(:disabled) {
+    background: #dc2626 !important;
 }

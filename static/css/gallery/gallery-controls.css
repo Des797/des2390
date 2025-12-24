@@ -66,3 +66,26 @@
     font-size: 13px;
     font-weight: 600;
 }
+
+.card-size-control {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.card-size-control label {
+    font-size: 12px;
+    color: var(--txt-muted);
+    white-space: nowrap;
+}
+
+.card-size-control input[type="range"] {
+    width: 100px;
+    cursor: pointer;
+}
+
+.card-size-control span {
+    font-size: 11px;
+    color: var(--txt-muted);
+    min-width: 40px;
+}
