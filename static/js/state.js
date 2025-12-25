@@ -16,7 +16,8 @@ const state = {
     selectedPosts: new Set(),
     bulkOperationActive: false,
     postSizes: {},
-    tagCounts: window[STORAGE_KEYS.TAG_COUNTS] || {}
+    tagCounts: window[STORAGE_KEYS.TAG_COUNTS] || {},
+    randomSeed: null
 };
 
 // History state management for browser back/forward

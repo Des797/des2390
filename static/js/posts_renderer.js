@@ -1,4 +1,4 @@
-// Post Rendering Functions
+// Post Rendering Functions - CLEANED & FIXED
 import { state } from './state.js';
 import { getTagWithCount } from './utils.js';
 import { FILE_TYPES, POST_STATUS, UI_CONSTANTS, CSS_CLASSES, EXTERNAL_URLS } from './constants.js';
@@ -21,7 +21,6 @@ function isGifFile(fileType) {
  * Generate media URL based on post status
  */
 function getMediaUrl(post) {
-    // Ensure file_type is defined
     const fileType = post.file_type || '.jpg';
     
     if (post.status === POST_STATUS.PENDING) {
@@ -41,156 +40,127 @@ function formatVideoDuration(seconds) {
 }
 
 /**
- * Setup video hover-to-play (FIXED - proper autoplay)
+ * Setup video hover-to-play using EVENT DELEGATION
+ * Prevents multiple listener accumulation
  */
 function setupVideoPreviewListeners() {
-    document.querySelectorAll('.gallery-item-media.media-video').forEach(container => {
-        const video = container.querySelector('video');
-        if (!video) return;
-        
-        video.muted = true;
-        video.playsInline = true;
-        video.loop = true;
-        
-        let isHovering = false;
-        let playTimeout = null;
-        let hasLoadedOnce = false;
-        
-        // Ensure poster is set from data attribute
-        const thumbUrl = video.dataset.thumbUrl;
-        if (thumbUrl && !video.poster) {
-            video.poster = thumbUrl;
-        }
-        
-        // Force poster to show by setting attribute directly
-        if (thumbUrl) {
-            video.setAttribute('poster', thumbUrl);
-        }
-        
-        container.addEventListener('mouseenter', () => {
-            isHovering = true;
-            
-            playTimeout = setTimeout(() => {
-                if (isHovering && video) {
-                    // Preload if needed
-                    if (!hasLoadedOnce) {
-                        video.preload = 'auto';
-                        hasLoadedOnce = true;
-                    }
-                    
-                    // Ensure video is ready to play
-                    const playPromise = video.play();
-                    
-                    if (playPromise !== undefined) {
-                        playPromise
-                            .then(() => {
-                                // Video started playing
-                                video.setAttribute('data-playing', 'true');
-                                
-                                // Hide poster image overlay if it exists
-                                const posterImg = container.querySelector('.video-poster');
-                                if (posterImg) {
-                                    posterImg.style.opacity = '0';
-                                    posterImg.style.transition = 'opacity 0.2s';
-                                }
-                            })
-                            .catch(err => {
-                                // Autoplay was prevented or error occurred
-                                console.warn('Video play failed for post', video.dataset.postId, ':', err);
-                                video.removeAttribute('data-playing');
-                                
-                                // Show poster again if it was hidden
-                                const posterImg = container.querySelector('.video-poster');
-                                if (posterImg) {
-                                    posterImg.style.opacity = '1';
-                                }
-                            });
-                    }
-                }
-            }, 200); // 200ms delay before starting playback
-        });
-        
-        container.addEventListener('mouseleave', () => {
-            isHovering = false;
-            
-            if (playTimeout) {
-                clearTimeout(playTimeout);
-                playTimeout = null;
-            }
-            
-            if (video) {
-                video.pause();
-                video.currentTime = 0;
-                video.removeAttribute('data-playing');
-                
-                // Show poster image overlay again
-                const posterImg = container.querySelector('.video-poster');
-                if (posterImg) {
-                    posterImg.style.opacity = '1';
-                    posterImg.style.transition = 'opacity 0.2s';
-                }
-                
-                // Reload to reset to poster frame
-                video.load();
-            }
-        });
-        
-        // Listen for play/pause events to manage state
-        video.addEventListener('play', () => {
-            video.setAttribute('data-playing', 'true');
-        });
-        
-        video.addEventListener('pause', () => {
-            video.removeAttribute('data-playing');
-        });
-        
-        // Handle errors
-        video.addEventListener('error', (e) => {
-            console.error('Video error for post', video.dataset.postId, ':', e);
-            video.removeAttribute('data-playing');
-        });
-    });
+    // Remove any existing delegated listeners
+    const grid = document.getElementById('postsGrid');
+    if (!grid) return;
     
-    // Generate missing thumbnails on-demand
+    // Use single delegated listener for all video containers
+    grid.removeEventListener('mouseenter', handleVideoMouseEnter, true);
+    grid.removeEventListener('mouseleave', handleVideoMouseLeave, true);
+    
+    grid.addEventListener('mouseenter', handleVideoMouseEnter, true);
+    grid.addEventListener('mouseleave', handleVideoMouseLeave, true);
+    
+    // Generate missing thumbnails
     generateMissingThumbnails();
 }
 
-window.setupVideoPreviewListeners = setupVideoPreviewListeners;
+function handleVideoMouseEnter(e) {
+    const container = e.target.closest('.gallery-item-media.media-video');
+    if (!container) return;
+    
+    const video = container.querySelector('video');
+    if (!video) return;
+    
+    video.muted = true;
+    video.playsInline = true;
+    video.loop = true;
+    
+    // Set poster if needed
+    const thumbUrl = video.dataset.thumbUrl;
+    if (thumbUrl && !video.poster) {
+        video.setAttribute('poster', thumbUrl);
+    }
+    
+    // Start playback after delay
+    const playTimeout = setTimeout(() => {
+        if (video.dataset.preload !== 'done') {
+            video.preload = 'auto';
+            video.dataset.preload = 'done';
+        }
+        
+        const playPromise = video.play();
+        if (playPromise !== undefined) {
+            playPromise
+                .then(() => {
+                    video.setAttribute('data-playing', 'true');
+                    const posterImg = container.querySelector('.video-poster');
+                    if (posterImg) posterImg.style.opacity = '0';
+                })
+                .catch(err => {
+                    console.warn('Video play failed:', err);
+                });
+        }
+    }, 200);
+    
+    video.dataset.playTimeout = playTimeout;
+}
+
+function handleVideoMouseLeave(e) {
+    const container = e.target.closest('.gallery-item-media.media-video');
+    if (!container) return;
+    
+    const video = container.querySelector('video');
+    if (!video) return;
+    
+    // Clear timeout
+    if (video.dataset.playTimeout) {
+        clearTimeout(parseInt(video.dataset.playTimeout));
+        delete video.dataset.playTimeout;
+    }
+    
+    video.pause();
+    video.currentTime = 0;
+    video.removeAttribute('data-playing');
+    
+    const posterImg = container.querySelector('.video-poster');
+    if (posterImg) posterImg.style.opacity = '1';
+    
+    video.load();
+}
 
 /**
- * Generate missing video thumbnails on-demand with real-time updates
+ * Generate missing video thumbnails - SEQUENTIAL with await
  */
 async function generateMissingThumbnails() {
+    if (window.__thumbnailsInitialized) return;
+    window.__thumbnailsInitialized = true;
+
     const videos = document.querySelectorAll('.media-video video[data-thumb-url]');
     
-    videos.forEach(async (video) => {
+    // Process sequentially to avoid overwhelming the server
+    for (const video of videos) {
         const thumbUrl = video.dataset.thumbUrl;
         const postId = video.dataset.postId;
         
-        // Check if thumbnail loads
-        const img = new Image();
-        
-        img.onload = () => {
-            // Thumbnail exists, ensure it's set
-            video.poster = thumbUrl;
-            video.setAttribute('poster', thumbUrl);
-            video.setAttribute('data-thumb-loaded', 'true');
+        try {
+            // Check if thumbnail exists (without heavy cache-buster)
+            const checkImg = new Image();
+            const thumbExists = await new Promise((resolve) => {
+                checkImg.onload = () => resolve(true);
+                checkImg.onerror = () => resolve(false);
+                checkImg.src = thumbUrl;
+            });
             
-            // Also update the poster image if it exists
-            const container = video.closest('.gallery-item-media');
-            if (container) {
-                const posterImg = container.querySelector('.video-poster');
-                if (posterImg) {
-                    posterImg.src = thumbUrl;
+            if (thumbExists) {
+                // Thumbnail exists, set it
+                video.poster = thumbUrl;
+                video.setAttribute('poster', thumbUrl);
+                video.setAttribute('data-thumb-loaded', 'true');
+                
+                const container = video.closest('.gallery-item-media');
+                if (container) {
+                    const posterImg = container.querySelector('.video-poster');
+                    if (posterImg) posterImg.src = thumbUrl;
                 }
-            }
-        };
-        
-        img.onerror = async () => {
-            // Thumbnail missing, request generation
-            console.log(`Thumbnail missing for post ${postId}, requesting generation...`);
-            
-            try {
+            } else {
+                // Generate thumbnail
+                console.log(`Generating thumbnail for post ${postId}...`);
+                
                 const response = await fetch(`/api/post/${postId}/generate-thumbnail`, {
                     method: 'POST'
                 });
@@ -198,44 +168,32 @@ async function generateMissingThumbnails() {
                 if (response.ok) {
                     const result = await response.json();
                     if (result.thumbnail_url) {
-                        // Add cache buster to force reload
-                        const newThumbUrl = result.thumbnail_url + '?t=' + Date.now();
+                        // Use minimal cache-buster (timestamp only once)
+                        const newThumbUrl = `${result.thumbnail_url}?v=${Date.now()}`;
                         
-                        // Update video poster
                         video.poster = newThumbUrl;
                         video.setAttribute('poster', newThumbUrl);
                         video.setAttribute('data-thumb-loaded', 'true');
                         
-                        // Update poster image overlay if it exists
                         const container = video.closest('.gallery-item-media');
                         if (container) {
                             const posterImg = container.querySelector('.video-poster');
                             if (posterImg) {
                                 posterImg.src = newThumbUrl;
-                                posterImg.style.display = 'block'; // Ensure it's visible
+                                posterImg.style.display = 'block';
                             }
                         }
                         
-                        // Force video to reload with new poster
                         video.load();
-                        
-                        console.log(`Generated and updated thumbnail for post ${postId}`);
+                        console.log(`Generated thumbnail for post ${postId}`);
                     }
-                } else {
-                    console.warn(`Thumbnail generation failed for post ${postId}: ${response.status}`);
                 }
-            } catch (error) {
-                console.warn(`Failed to generate thumbnail for post ${postId}:`, error);
             }
-        };
-        
-        // Add cache buster to check if thumbnail really exists
-        img.src = thumbUrl + '?check=' + Date.now();
-    });
+        } catch (error) {
+            console.warn(`Thumbnail handling failed for post ${postId}:`, error);
+        }
+    }
 }
-
-window.generateMissingThumbnails = generateMissingThumbnails;
-
 
 /**
  * Calculate grid row span based on image aspect ratio
@@ -245,37 +203,29 @@ function calculateRowSpan(width, height) {
     const cardWidth = UI_CONSTANTS.CARD_BASE_WIDTH;
     const cardHeight = cardWidth * aspectRatio;
     const mediaRowSpan = Math.ceil(cardHeight / UI_CONSTANTS.CARD_ROW_HEIGHT);
-
-    // Remove extra rows; rely on natural height of info section
     return mediaRowSpan;
 }
 
-// REPLACE the renderMedia function in posts_renderer.js with this fixed version
-
 /**
- * Render media HTML with proper thumbnail support and duration placeholder
+ * Render media HTML with proper thumbnail support
  */
 function renderMedia(post) {
     const mediaUrl = getMediaUrl(post);
     const isVideo = isVideoFile(post.file_type);
     const isGif = isGifFile(post.file_type);
     
-    // Ensure post.id is valid
     const postId = post.id;
     if (!postId) {
         console.error('Invalid post ID:', post);
         return '<div>Error: Invalid post ID</div>';
     }
     
-    // Show placeholder initially, will be filled by fetchVideoDuration
     const duration = post.duration ? formatVideoDuration(post.duration) : null;
     
     let mediaClass = '';
     if (isVideo) mediaClass = 'media-video';
     else if (isGif) mediaClass = 'media-gif';
 
-    // Duration badge: show placeholder "..." initially, filled in after load
-    // IMPORTANT: Ensure data-post-id is set correctly
     const durationBadge = isVideo 
         ? `<div class="video-duration" data-post-id="${postId}">${duration || '...'}</div>` 
         : '';
@@ -290,15 +240,14 @@ function renderMedia(post) {
         
         return `
             <div class="${mediaClass}" data-post-id="${postId}">
-                <img class="video-poster" src="${thumbUrl}" alt="Video thumbnail" style="position: absolute; top: 0; left: 0; width: 100%; height: 100%; object-fit: contain; pointer-events: none; z-index: 1;">
+                <img class="video-poster" src="${thumbUrl}" alt="Video thumbnail">
                 <video src="${mediaUrl}" 
                        poster="${thumbUrl}"
                        muted 
                        loop 
                        preload="none"
                        data-post-id="${postId}"
-                       data-thumb-url="${thumbUrl}"
-                       style="position: relative; z-index: 0;">
+                       data-thumb-url="${thumbUrl}">
                 </video>
                 <div class="video-overlay"></div>
                 ${durationBadge}
@@ -332,12 +281,11 @@ function renderOwner(post) {
 }
 
 /**
- * Render tags preview (first 3 tags with counts)
+ * Render tags preview
  */
 function renderTagsPreview(post, searchQuery = '') {
     const matchingTags = post.matchingTags || [];
     
-    // Show ALL matching tags, then first few non-matching
     const sortedTags = [
         ...post.tags.filter(t => matchingTags.includes(t)),
         ...post.tags.filter(t => !matchingTags.includes(t))
@@ -354,34 +302,33 @@ function renderTagsPreview(post, searchQuery = '') {
     }).join('');
     
     const expandBtn = remainingCount > 0 ? 
-        `<span style="cursor:pointer;color:#10b981;position:relative;" class="${CSS_CLASSES.EXPAND_TAGS}" data-all-tags='${JSON.stringify(post.tags)}' data-matching='${JSON.stringify(matchingTags)}'>+${remainingCount}</span>` : '';
+        `<span class="${CSS_CLASSES.EXPAND_TAGS}" data-all-tags='${JSON.stringify(post.tags)}' data-matching='${JSON.stringify(matchingTags)}'>+${remainingCount}</span>` : '';
     
     return { tagsPreview: tagsHtml, expandBtn };
 }
 
 /**
- * Render card info line with conditional display based on active filters/sorting
+ * Render card info - FIXED null/undefined check
  */
-function renderCardInfo(post, activeSort, activeSearch) {
+function renderCardInfo(post, activeSort, activeSearch = '') {
     const parts = [];
     
-    // Always show if sorting by or searching by ID
-    if (activeSort === 'id' || activeSearch.includes('id:')) {
+    // Ensure activeSearch is a string
+    const search = String(activeSearch || '');
+    
+    if (activeSort === 'id' || search.includes('id:')) {
         parts.push(`#${post.id}`);
     }
     
-    // Show dimensions if sorting by size or searching by dimensions
-    if (activeSort === 'size' || activeSearch.includes('width:') || activeSearch.includes('height:')) {
+    if (activeSort === 'size' || search.includes('width:') || search.includes('height:')) {
         parts.push(`${post.width}×${post.height}`);
     }
     
-    // Show score if sorting by or filtering by score
-    if (activeSort === 'score' || activeSearch.includes('score:')) {
+    if (activeSort === 'score' || search.includes('score:')) {
         parts.push(`⭐${post.score}`);
     }
     
-    // Always show status badge
-    const statusBadge = renderStatusBadge(post.status);
+    const statusBadge = `<span class="status-badge status-${post.status}">${post.status === POST_STATUS.PENDING ? 'P' : 'S'}</span>`;
     
     if (parts.length > 0) {
         return `<div class="gallery-item-id">${parts.join(' • ')} • ${statusBadge}</div>`;
@@ -391,18 +338,7 @@ function renderCardInfo(post, activeSort, activeSearch) {
 }
 
 /**
- * Render status badge
- */
-function renderStatusBadge(status) {
-    const isPending = status === POST_STATUS.PENDING;
-    const badgeColor = isPending ? '#f59e0b' : '#10b981';
-    const badgeText = isPending ? 'P' : 'S';
-    
-    return `<span style="background:${badgeColor};color:white;padding:2px 6px;border-radius:3px;font-size:9px;font-weight:600;" title="${isPending ? 'Pending' : 'Saved'}">${badgeText}</span>`;
-}
-
-/**
- * Render action buttons based on post status (for mobile/card view)
+ * Render action buttons
  */
 function renderActions(post) {
     if (post.status === POST_STATUS.PENDING) {
@@ -421,7 +357,7 @@ function renderActions(post) {
 }
 
 /**
- * Render hover overlay action buttons (desktop only)
+ * Render hover overlay action buttons
  */
 function renderHoverActions(post) {
     if (post.status === POST_STATUS.PENDING) {
@@ -443,20 +379,19 @@ function renderHoverActions(post) {
 }
 
 /**
- * Render a single post card with dynamic sizing
+ * Render a single post card
  */
 function renderPost(post, activeSort = '', activeSearch = '') {
     const isSelected = state.selectedPosts.has(post.id);
     const mediaHtml = renderMedia(post);
     const titleHtml = renderTitle(post);
     const ownerHtml = renderOwner(post);
-    const { tagsPreview, expandBtn } = renderTagsPreview(post);
+    const { tagsPreview, expandBtn } = renderTagsPreview(post, activeSearch);
     const cardInfo = renderCardInfo(post, activeSort, activeSearch);
     const actions = renderActions(post);
-    const hoverActions = renderHoverActions(post);  // NEW: Hover buttons
+    const hoverActions = renderHoverActions(post);
     const rowSpan = calculateRowSpan(post.width, post.height);
     
-    // Determine media container class for border styling
     const isVideo = isVideoFile(post.file_type);
     const isGif = isGifFile(post.file_type);
     let mediaClass = 'gallery-item-media';
@@ -476,25 +411,14 @@ function renderPost(post, activeSort = '', activeSearch = '') {
             <div class="gallery-item-info">
                 ${titleHtml}${ownerHtml}
                 ${cardInfo}
-                <div class="gallery-item-tags" data-all-tags='${JSON.stringify(post.tags)}'>${tagsPreview}${expandBtn}</div>
+                <div class="gallery-item-tags">${tagsPreview}${expandBtn}</div>
                 <div class="gallery-item-actions">${actions}</div>
             </div>
         </div>`;
 }
 
 /**
- * Render modal status badge
- */
-function renderModalStatusBadge(status) {
-    const isPending = status === POST_STATUS.PENDING;
-    const badgeColor = isPending ? '#f59e0b' : '#10b981';
-    const badgeText = isPending ? 'PENDING' : 'SAVED';
-    
-    return `<span style="background:${badgeColor};color:white;padding:4px 12px;border-radius:4px;font-size:12px;font-weight:600;">${badgeText}</span>`;
-}
-
-/**
- * Render modal tags with counts
+ * Render modal content - DRY tag rendering
  */
 function renderModalTags(tags) {
     return tags.map(t => {
@@ -503,58 +427,49 @@ function renderModalTags(tags) {
     }).join('');
 }
 
-/**
- * Render modal actions based on post status
- */
+function renderModalTagsSection(post) {
+    const tagsHtml = renderModalTags(post.tags);
+    
+    return `
+        <div class="modal-tags-section">
+            <div class="modal-tags-header">
+                <h4>Tags (${post.tags.length})</h4>
+                <button class="btn-primary btn-edit-tags ${CSS_CLASSES.GREYED_OUT}" disabled title="API not supported">✏️ Edit Tags</button>
+            </div>
+            <div class="modal-tags">${tagsHtml}</div>
+        </div>
+    `;
+}
+
 function renderModalActions(post) {
     const viewR34Btn = `<button class="btn-primary" onclick="window.open('${EXTERNAL_URLS.RULE34_POST_VIEW}${post.id}', '_blank')">🔗 View on R34</button>`;
-    const disabledBtns = `
-        <button class="btn-warning ${CSS_CLASSES.GREYED_OUT}" disabled title="API not supported">❤️ Like</button>
-        <button class="btn-primary ${CSS_CLASSES.GREYED_OUT}" disabled title="API not supported">✏️ Edit Tags</button>
-    `;
+    const likeBtn = `<button class="btn-warning btn-like ${CSS_CLASSES.GREYED_OUT}" disabled title="API not supported">❤️</button>`;
     
     if (post.status === POST_STATUS.PENDING) {
         return `
             <button class="btn-success" onclick="window.modalSavePost(${post.id})">💾 Save</button>
             <button class="btn-secondary" onclick="window.modalDiscardPost(${post.id})">🗑️ Discard</button>
             ${viewR34Btn}
-            ${disabledBtns}
+            ${likeBtn}
         `;
     }
     
-    return `${viewR34Btn}${disabledBtns}`;
-}
-
-/**
- * Render modal info grid
- */
-function renderModalInfoGrid(post) {
     return `
-        <div class="modal-info-grid">
-            <div class="modal-info-item"><strong>ID:</strong> ${post.id}</div>
-            <div class="modal-info-item"><strong>Owner:</strong> <span style="cursor:pointer;color:#10b981" onclick="window.modalFilterByOwner('${post.owner}')">${post.owner}</span></div>
-            <div class="modal-info-item"><strong>Dimensions:</strong> ${post.width}×${post.height}</div>
-            <div class="modal-info-item"><strong>Rating:</strong> ${post.rating}</div>
-            <div class="modal-info-item"><strong>Score:</strong> ${post.score}</div>
-            <div class="modal-info-item"><strong>Tags:</strong> ${post.tags.length}</div>
-        </div>
+        ${viewR34Btn}
+        ${likeBtn}
+        <button class="btn-danger" onclick="if(confirm('Delete this post permanently?')) window.modalDeletePost(${post.id}, '${post.date_folder}')">🗑️ Delete</button>
     `;
 }
 
-/**
- * Render complete modal content for a post - IMPROVED with actions at top
- */
 function renderModalContent(post) {
-    const statusBadge = renderModalStatusBadge(post.status);
-    const tagsHtml = renderModalTags(post.tags);
+    const statusBadge = `<span class="status-badge status-${post.status}">${post.status === POST_STATUS.PENDING ? 'PENDING' : 'SAVED'}</span>`;
     const actions = renderModalActions(post);
+    const tagsSection = renderModalTagsSection(post);
     
-    // Calculate file size display
     const fileSizeDisplay = post.file_size 
         ? `${(post.file_size / 1024 / 1024).toFixed(2)} MB` 
         : 'Unknown';
     
-    // Format dates
     const uploadDate = post.created_at 
         ? new Date(post.created_at).toLocaleDateString() 
         : 'Unknown';
@@ -570,67 +485,26 @@ function renderModalContent(post) {
         <div style="margin-bottom: 15px;">${statusBadge}</div>
         
         <div class="modal-info-grid">
-            <div class="modal-info-item">
-                <strong>ID</strong>
-                <span>${post.id}</span>
-            </div>
-            <div class="modal-info-item">
-                <strong>Owner</strong>
-                <span style="cursor:pointer;color:var(--accent);font-weight:600;" onclick="window.modalFilterByOwner('${post.owner}')">${post.owner}</span>
-            </div>
-            <div class="modal-info-item">
-                <strong>Dimensions</strong>
-                <span>${post.width}×${post.height}</span>
-            </div>
-            <div class="modal-info-item">
-                <strong>File Size</strong>
-                <span>${fileSizeDisplay}</span>
-            </div>
-            <div class="modal-info-item">
-                <strong>File Type</strong>
-                <span>${post.file_type || 'Unknown'}</span>
-            </div>
-            <div class="modal-info-item">
-                <strong>Rating</strong>
-                <span>${post.rating || 'Unknown'}</span>
-            </div>
-            <div class="modal-info-item">
-                <strong>Score</strong>
-                <span>${post.score}</span>
-            </div>
-            <div class="modal-info-item">
-                <strong>Tags</strong>
-                <span>${post.tags.length}</span>
-            </div>
-            <div class="modal-info-item">
-                <strong>Uploaded</strong>
-                <span>${uploadDate}</span>
-            </div>
-            <div class="modal-info-item">
-                <strong>Downloaded</strong>
-                <span>${downloadDate}</span>
-            </div>
-            ${post.date_folder ? `
-                <div class="modal-info-item">
-                    <strong>Date Folder</strong>
-                    <span>${post.date_folder}</span>
-                </div>
-            ` : ''}
-            ${post.duration ? `
-                <div class="modal-info-item">
-                    <strong>Duration</strong>
-                    <span>${formatVideoDuration(post.duration)}</span>
-                </div>
-            ` : ''}
+            <div class="modal-info-item"><strong>ID</strong><span>${post.id}</span></div>
+            <div class="modal-info-item"><strong>Owner</strong><span class="clickable-owner" onclick="window.modalFilterByOwner('${post.owner}')">${post.owner}</span></div>
+            <div class="modal-info-item"><strong>Dimensions</strong><span>${post.width}×${post.height}</span></div>
+            <div class="modal-info-item"><strong>File Size</strong><span>${fileSizeDisplay}</span></div>
+            <div class="modal-info-item"><strong>File Type</strong><span>${post.file_type || 'Unknown'}</span></div>
+            <div class="modal-info-item"><strong>Rating</strong><span>${post.rating || 'Unknown'}</span></div>
+            <div class="modal-info-item"><strong>Score</strong><span>${post.score}</span></div>
+            <div class="modal-info-item"><strong>Tags</strong><span>${post.tags.length}</span></div>
+            <div class="modal-info-item"><strong>Uploaded</strong><span>${uploadDate}</span></div>
+            <div class="modal-info-item"><strong>Downloaded</strong><span>${downloadDate}</span></div>
+            ${post.date_folder ? `<div class="modal-info-item"><strong>Date Folder</strong><span>${post.date_folder}</span></div>` : ''}
+            ${post.duration ? `<div class="modal-info-item"><strong>Duration</strong><span>${formatVideoDuration(post.duration)}</span></div>` : ''}
         </div>
         
-        <h4 style="color:var(--accent);margin-bottom:15px;font-size:16px;">Tags (${post.tags.length})</h4>
-        <div class="modal-tags">${tagsHtml}</div>
+        ${tagsSection}
     `;
 }
 
 /**
- * Render pagination buttons with go-to-page input
+ * Render pagination buttons
  */
 function renderPaginationButtons(currentPage, totalPages) {
     const buttons = [];
@@ -638,7 +512,6 @@ function renderPaginationButtons(currentPage, totalPages) {
     buttons.push(`<button data-page="1" ${currentPage === 1 ? 'disabled' : ''}>⏮️ First</button>`);
     buttons.push(`<button data-page="${currentPage - 1}" ${currentPage === 1 ? 'disabled' : ''}>‹ Prev</button>`);
     
-    // Go to page input
     buttons.push(`
         <div class="go-to-page">
             <span>Page</span>
@@ -647,6 +520,8 @@ function renderPaginationButtons(currentPage, totalPages) {
             <button id="gotoPageBtn">Go</button>
         </div>
     `);
+    
+    buttons.push(`<button class="btn-random-page" id="randomPageBtn" title="Random Page" ${totalPages <= 1 ? 'disabled' : ''}>∞</button>`);
     
     buttons.push(`<button data-page="${currentPage + 1}" ${currentPage === totalPages ? 'disabled' : ''}>Next ›</button>`);
     buttons.push(`<button data-page="${totalPages}" ${currentPage === totalPages ? 'disabled' : ''}>Last ⏭️</button>`);
@@ -683,7 +558,7 @@ function renderTagHistoryItem(item) {
 }
 
 /**
- * Render expanded tags (when user clicks "show more")
+ * Render expanded tags
  */
 function renderExpandedTags(tags) {
     return tags.map(t => {
@@ -692,32 +567,8 @@ function renderExpandedTags(tags) {
     }).join('');
 }
 
-/**
- * Debug function to check video poster status
- */
-function debugVideoPosterStatus() {
-    const videos = document.querySelectorAll('video');
-    console.log(`Found ${videos.length} video elements`);
-    
-    videos.forEach((video, index) => {
-        console.log(`Video ${index}:`, {
-            postId: video.dataset.postId,
-            poster: video.poster,
-            posterAttr: video.getAttribute('poster'),
-            thumbUrl: video.dataset.thumbUrl,
-            hasLoaded: video.getAttribute('data-thumb-loaded'),
-            preload: video.preload,
-            readyState: video.readyState
-        });
-    });
-}
-
-// Call after a delay to check status
-setTimeout(debugVideoPosterStatus, 2000);
-
-window.debugVideoPosterStatus = debugVideoPosterStatus;
-
-window.debugVideoPosterStatus = debugVideoPosterStatus;
+window.setupVideoPreviewListeners = setupVideoPreviewListeners;
+window.generateMissingThumbnails = generateMissingThumbnails;
 
 export {
     renderPost,

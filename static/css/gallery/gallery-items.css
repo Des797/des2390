@@ -69,6 +69,23 @@
     line-height: 1.3;
 }
 
+/* Status badges - replacing inline styles */
+.status-badge {
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 9px;
+    font-weight: 600;
+    color: white;
+}
+
+.status-badge.status-pending {
+    background: #f59e0b;
+}
+
+.status-badge.status-saved {
+    background: #10b981;
+}
+
 .gallery-item-tags {
     font-size: 13px;
     color: var(--txt-main);
@@ -93,6 +110,12 @@
 
 .gallery-item-tags .tag.matching:hover {
     background: #2c5d3f;
+}
+
+.gallery-item-tags .expand-tags {
+    cursor: pointer;
+    color: #10b981;
+    position: relative;
 }
 
 .gallery-item-actions {

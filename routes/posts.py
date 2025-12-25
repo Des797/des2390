@@ -130,24 +130,26 @@ def create_post_routes(app, config, services, login_required):
     @login_required
     def get_posts_paginated():
         """
-        OPTIMIZED: Server-side pagination WITH sorting and text search
+        OPTIMIZED: Server-side pagination WITH sorting, search, and RANDOM support
         
         Query params:
             - filter: 'all', 'pending', 'saved'
             - limit: number of posts per page (default 42, max 1000)
             - offset: starting position (default 0)
-            - sort: sort column (timestamp, score, id, owner, width, height, tags, upload, download)
+            - sort: sort column (timestamp, score, id, owner, width, height, tags, upload, download, random)
             - order: 'asc' or 'desc' (default 'desc')
             - search: text search query (searches owner, title, tags)
+            - random_seed: seed for random sort (optional, maintains order across pages)
         
         Returns:
             {
-                'posts': [...],     # Only the requested page, sorted
-                'total': count,     # Total matching posts (with filters/search)
+                'posts': [...],
+                'total': count,
                 'limit': limit,
                 'offset': offset,
                 'sort': sort,
-                'order': order
+                'order': order,
+                'random_seed': seed (if random sort)
             }
         """
         try:
@@ -158,6 +160,14 @@ def create_post_routes(app, config, services, login_required):
             sort_by = request.args.get('sort', 'timestamp')
             order = request.args.get('order', 'desc').upper()
             search_query = request.args.get('search', '').strip()
+            random_seed = request.args.get('random_seed', None)
+            
+            # Convert random_seed to int if provided
+            if random_seed is not None:
+                try:
+                    random_seed = int(random_seed)
+                except ValueError:
+                    random_seed = None
             
             # Validate
             if limit < 1 or limit > 1000:
@@ -172,25 +182,26 @@ def create_post_routes(app, config, services, login_required):
                 'download': 'downloaded_at',
                 'upload': 'created_at',
                 'id': 'post_id',
-                'tags': 'tags',  # Will be handled specially (tag count)
-                'size': 'timestamp'  # Size requires file I/O, fallback to timestamp
+                'tags': 'tags',
+                'size': 'timestamp',
+                'random': 'random'  # Special handling
             }
             sort_by = sort_mapping.get(sort_by, sort_by)
             
             logger.info(
                 f"Paginated request: filter={filter_type}, limit={limit}, offset={offset}, "
-                f"sort={sort_by} {order}, search='{search_query}'"
+                f"sort={sort_by} {order}, search='{search_query}', random_seed={random_seed}"
             )
             
-            # CRITICAL: Pass search_query to service
-            logger.info(f"Calling post_service.get_posts with search_query='{search_query}'")
+            # Call service with random_seed
             result = post_service.get_posts(
                 filter_type=filter_type,
                 limit=limit,
                 offset=offset,
                 sort_by=sort_by,
                 order=order,
-                search_query=search_query if search_query else None  # Pass search!
+                search_query=search_query if search_query else None,
+                random_seed=random_seed
             )
             
             # Add sort/search info to response
@@ -208,7 +219,7 @@ def create_post_routes(app, config, services, login_required):
         except Exception as e:
             logger.error(f"Paginated endpoint error: {e}", exc_info=True)
             return jsonify({"error": str(e)}), 500
-    
+
     @app.route("/api/posts/ids")
     @login_required
     def get_post_ids():
@@ -220,24 +231,38 @@ def create_post_routes(app, config, services, login_required):
             filter_type = request.args.get('filter', 'all')
             search_query = request.args.get('search', '').strip()
             
-            # Use database directly for efficiency
+            logger.info(f"get_post_ids called: filter={filter_type}, search='{search_query}'")
+            
+            # Use post_service to apply proper search filtering
             status = None if filter_type == 'all' else filter_type
             
-            with post_service.database.core.get_connection() as conn:
-                query = "SELECT post_id FROM post_cache WHERE 1=1"
-                params = []
+            # If there's a search query, use QueryTranslator
+            if search_query:
+                from query_translator import get_query_translator
+                translator = get_query_translator()
                 
-                if status:
-                    query += " AND status = ?"
-                    params.append(status)
+                # Translate search query to SQL
+                where_clause, params = translator.translate(search_query, status)
                 
-                if search_query:
-                    search_term = f"%{search_query}%"
-                    query += " AND (owner LIKE ? OR title LIKE ? OR tags LIKE ?)"
-                    params.extend([search_term, search_term, search_term])
+                logger.info(f"Translated query: {where_clause}")
+                logger.info(f"Params: {params}")
                 
-                cursor = conn.execute(query, params)
-                ids = [row[0] for row in cursor.fetchall()]
+                with post_service.database.core.get_connection() as conn:
+                    query = f"SELECT post_id FROM post_cache WHERE {where_clause}"
+                    cursor = conn.execute(query, params)
+                    ids = [row[0] for row in cursor.fetchall()]
+            else:
+                # No search query - just filter by status
+                with post_service.database.core.get_connection() as conn:
+                    if status:
+                        query = "SELECT post_id FROM post_cache WHERE status = ?"
+                        cursor = conn.execute(query, [status])
+                    else:
+                        query = "SELECT post_id FROM post_cache"
+                        cursor = conn.execute(query)
+                    ids = [row[0] for row in cursor.fetchall()]
+            
+            logger.info(f"Returning {len(ids)} post IDs")
             
             return jsonify({
                 'ids': ids,

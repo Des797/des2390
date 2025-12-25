@@ -10,11 +10,10 @@ if (!API_ENDPOINTS.POST_COUNT) {
 }
 
 /**
- * NEW: Get paginated posts directly from server
  * Only loads what's needed for current page
  */
-async function loadPostsPaginated(filter, limit, offset, sortBy, order, searchQuery) {
-    console.log(`📄 loadPostsPaginated: filter=${filter}, limit=${limit}, offset=${offset}, sortBy=${sortBy}, order=${order}, search=${searchQuery}`);
+async function loadPostsPaginated(filter, limit, offset, sortBy, order, searchQuery, randomSeed = null) {
+    console.log(`📄 loadPostsPaginated: filter=${filter}, limit=${limit}, offset=${offset}, sortBy=${sortBy}, order=${order}, search=${searchQuery}, seed=${randomSeed}`);
 
     try {
         const params = new URLSearchParams({
@@ -25,6 +24,7 @@ async function loadPostsPaginated(filter, limit, offset, sortBy, order, searchQu
             order,
         });
         if (searchQuery) params.append('search', searchQuery);
+        if (randomSeed !== null) params.append('random_seed', randomSeed);
 
         const url = `/api/posts/paginated?${params.toString()}`;
         console.log(`🌐 Fetching: ${url}`);
@@ -44,17 +44,21 @@ async function loadPostsPaginated(filter, limit, offset, sortBy, order, searchQu
     }
 }
 
-
 /**
  * NEW: Get total count only (fast)
  */
-async function getTotalCount(filter) {
-    console.log(`🔢 getTotalCount: filter=${filter}`);
+async function getTotalCount(filter, searchQuery) {
+    console.log(`🔢 getTotalCount: filter=${filter}, search=${searchQuery}`);
     
     try {
-        const response = await fetch(`/api/posts/count?filter=${filter}`);
+        const params = new URLSearchParams({ filter });
+        if (searchQuery) {
+            params.append('search', searchQuery);
+        }
+        
+        const response = await fetch(`/api/posts/count?${params.toString()}`);
         const data = await response.json();
-        console.log(`✅ Total count: ${data.total}`);
+        console.log(`✅ Total count: ${data.total} (with search filter)`);
         return data.total;
     } catch (error) {
         console.error('❌ getTotalCount failed:', error);

@@ -11,9 +11,39 @@ function showNotification(message, type = NOTIFICATION_TYPES.SUCCESS) {
     
     text.textContent = message;
     
-    setTimeout(() => {
+    // Check if mobile
+    const isMobile = window.innerWidth <= 768;
+    
+    // Auto-dismiss timer
+    const dismissTimeout = setTimeout(() => {
         notification.classList.remove(CSS_CLASSES.SHOW);
     }, UI_CONSTANTS.NOTIFICATION_DURATION);
+    
+    // Click to dismiss (especially for mobile)
+    const clickHandler = () => {
+        clearTimeout(dismissTimeout);
+        notification.classList.remove(CSS_CLASSES.SHOW);
+        notification.removeEventListener('click', clickHandler);
+    };
+    
+    notification.addEventListener('click', clickHandler);
+    
+    // On mobile, also dismiss on any touch outside the notification
+    if (isMobile) {
+        const touchHandler = (e) => {
+            if (!notification.contains(e.target)) {
+                clearTimeout(dismissTimeout);
+                notification.classList.remove(CSS_CLASSES.SHOW);
+                notification.removeEventListener('click', clickHandler);
+                document.removeEventListener('touchstart', touchHandler);
+            }
+        };
+        
+        // Add slight delay before enabling touch-outside-to-dismiss
+        setTimeout(() => {
+            document.addEventListener('touchstart', touchHandler, { once: true });
+        }, 100);
+    }
 }
 
 function formatBytes(bytes) {

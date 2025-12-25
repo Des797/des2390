@@ -176,17 +176,25 @@ async function loadTagsIntoSidebar(content, filter, search, searchedTags) {
         return;
     }
     
+    // Calculate max count for percentage calculation
+    const maxCount = Math.max(...topTags.map(t => t.count));
+    
     content.innerHTML = topTags.map(item => {
         const isSearched = searchedTags.includes(item.tag.toLowerCase());
         const highlightClass = isSearched ? 'searched-tag' : '';
         
+        // Calculate percentage (0-100)
+        const percentage = maxCount > 0 ? (item.count / maxCount * 100) : 0;
+        
         return `
-            <div class="sidebar-tag ${highlightClass}" data-tag="${item.tag}">
+            <div class="sidebar-tag ${highlightClass}" 
+                 data-tag="${item.tag}" 
+                 style="--tag-percentage: ${percentage}%">
+                <span class="tag-count">${item.count}</span>
                 <span class="sidebar-tag-name" title="${item.tag}">${item.tag}</span>
                 <div class="sidebar-tag-actions">
                     <button class="tag-action-add" data-tag="${item.tag}" title="Add to search">+</button>
                     <button class="tag-action-negate" data-tag="${item.tag}" title="Exclude from search">−</button>
-                    <span class="tag-count">${item.count}</span>
                 </div>
             </div>
         `;
@@ -216,7 +224,34 @@ async function loadTagsIntoSidebar(content, filter, search, searchedTags) {
     content.querySelectorAll('.tag-action-negate').forEach(btn => {
         btn.addEventListener('click', async (e) => {
             e.stopPropagation();
+
             const tag = btn.dataset.tag;
+            if (!tag) return;
+
+            const searchInput = document.getElementById('postsSearchInput');
+            if (!searchInput) return;
+
+            let currentSearch = searchInput.value;
+
+            // Escape tag safely for regex usage
+            const escapedTag = tag.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+            const patterns = [
+                new RegExp(`\\s*-tag:${escapedTag}\\b`, 'gi'),
+                new RegExp(`\\s*!tag:${escapedTag}\\b`, 'gi'),
+                new RegExp(`\\s*tag:${escapedTag}\\b`, 'gi'),
+                new RegExp(`\\s*\\b${escapedTag}\\b`, 'gi')
+            ];
+
+            patterns.forEach(pattern => {
+                currentSearch = currentSearch.replace(pattern, '');
+            });
+
+            // Normalize whitespace
+            currentSearch = currentSearch.replace(/\s+/g, ' ').trim();
+            searchInput.value = currentSearch;
+
+            // Append negated tag
             await appendTagToSearch(`-tag:${tag}`);
         });
     });

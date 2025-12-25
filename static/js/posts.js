@@ -188,8 +188,9 @@ async function loadPosts(updateURL = true) {
         
         const searchQuery = state.postsSearch;
         const effectiveStatus = state.postsStatusFilter;
+        const sortBy = state.postsSortBy;
         
-        console.log('🔍 Filter:', effectiveStatus, 'Search:', searchQuery);
+        console.log('🔍 Filter:', effectiveStatus, 'Search:', searchQuery, 'Sort:', sortBy);
         
         grid.innerHTML = '<p style="color: #10b981; text-align: center; grid-column: 1/-1; font-size: 18px;">⏳ Counting posts...</p>';
         
@@ -197,13 +198,10 @@ async function loadPosts(updateURL = true) {
         const total = await getTotalCount(effectiveStatus, searchQuery);
         console.log(`✅ Total: ${total} posts (with filters)`);
         
-        // Update total display IMMEDIATELY - with multiple safeguards
+        // Update total display
         const totalResultsEl = document.getElementById(ELEMENT_IDS.POSTS_TOTAL_RESULTS);
         if (totalResultsEl) {
             totalResultsEl.textContent = `Total: ${total.toLocaleString()} posts`;
-            console.log('✅ Total count display updated');
-        } else {
-            console.error('❌ Total results element not found!');
         }
         
         // Step 2: Get posts per page
@@ -218,23 +216,46 @@ async function loadPosts(updateURL = true) {
         
         grid.innerHTML = `<p style="color: #10b981; text-align: center; grid-column: 1/-1; font-size: 18px;">⏳ Loading page ${state.postsPage}...</p>`;
         
-        // Step 4: Load posts with SERVER-SIDE sort and search
-        const sortBy = state.postsSortBy;
+        // Step 4: Load posts with SERVER-SIDE sort
         const order = state.postsSortOrder;
+        
+        // For random sort, generate seed on first load or when changing filters
+        if (sortBy === 'random') {
+            // Generate new seed if:
+            // - No seed exists
+            // - Sort just changed to random
+            // - Filters/search changed
+            const filterKey = `${effectiveStatus}|${searchQuery}`;
+            if (!state.randomSeed || state.lastRandomFilterKey !== filterKey) {
+                state.randomSeed = Math.floor(Math.random() * 2147483647);
+                state.lastRandomFilterKey = filterKey;
+                console.log(`🎲 Generated new random seed: ${state.randomSeed}`);
+            }
+        } else {
+            // Clear seed when not using random sort
+            state.randomSeed = null;
+            state.lastRandomFilterKey = null;
+        }
         
         const result = await loadPostsPaginated(
             effectiveStatus,
             perPage,
             offset,
-            sortBy === 'tags_matching' ? 'timestamp' : sortBy, // Fallback for custom sort
+            sortBy,
             order,
-            searchQuery
+            searchQuery,
+            state.randomSeed  // Pass seed for random sort
         );
         
         let posts = result.posts;
         
+        // Update seed from response (server may have generated one)
+        if (result.random_seed) {
+            state.randomSeed = result.random_seed;
+        }
+        
         const loadTime = ((Date.now() - startTime) / 1000).toFixed(1);
-        console.log(`✅ Loaded page in ${loadTime}s (already sorted by server)`);
+        console.log(`✅ Loaded page in ${loadTime}s (server-side sorted)`);
         
         // Fix missing file_type
         posts = posts.map(post => {
@@ -252,13 +273,7 @@ async function loadPosts(updateURL = true) {
         // Highlight matching tags
         posts = highlightMatchingTags(posts, searchQuery);
         
-        // If sorting by tag matching, apply custom sort
-        if (sortBy === 'tags_matching') {
-            const blacklist = JSON.parse(localStorage.getItem('blacklist') || '[]');
-            posts = sortByTagMatching(posts, searchQuery, blacklist);
-        }
-        
-        // Render tag sidebar (async from backend)
+        // Render tag sidebar
         renderTagSidebar(effectiveStatus, searchQuery);
         
         // Store posts for modal navigation
@@ -266,15 +281,10 @@ async function loadPosts(updateURL = true) {
         rebuildModalIndexCache();
         
         if (posts.length === 0) {
-            console.log('⚠️ No posts to display');
             grid.innerHTML = '<p style="color: #64748b; text-align: center; grid-column: 1/-1;">No posts match your filters</p>';
         } else {
-            console.log('🎨 Rendering', posts.length, 'posts (pre-sorted by server)...');
-            
             grid.innerHTML = `<p style="color: #10b981; text-align: center; grid-column: 1/-1; font-size: 18px;">⏳ Rendering ${posts.length} posts...</p>`;
             await renderPostsOptimized(grid, posts, sortBy, searchQuery);
-            
-            console.log('✅ Rendering complete');
         }
         
         const totalTime = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -517,16 +527,61 @@ function selectAllOnPage() {
     updateBulkControls();
 }
 
-function selectAllMatching() {
-    state.allPosts.forEach(post => state.selectedPosts.add(post.id));
-    document.querySelectorAll(`.${CSS_CLASSES.GALLERY_ITEM}`).forEach(item => {
-        const postId = parseInt(item.dataset.postId);
-        if (state.selectedPosts.has(postId)) {
-            item.classList.add(CSS_CLASSES.SELECTED);
-            item.querySelector(`.${CSS_CLASSES.SELECT_CHECKBOX}`).classList.add(CSS_CLASSES.CHECKED);
+async function selectAllMatching() {
+    const btn = document.getElementById(ELEMENT_IDS.SELECT_ALL_POSTS_GLOBAL);
+    const originalText = btn ? btn.textContent : '✓✓ Select All Matching';
+    
+    try {
+        // Show loading indicator
+        if (btn) {
+            btn.textContent = '⏳ Loading all matching posts...';
+            btn.disabled = true;
         }
-    });
-    updateBulkControls();
+        
+        // Fetch ALL matching post IDs from backend
+        const params = new URLSearchParams({
+            filter: state.postsStatusFilter,
+            search: state.postsSearch
+        });
+        
+        const response = await fetch(`/api/posts/ids?${params}`);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        // Add all IDs to selection
+        data.ids.forEach(id => state.selectedPosts.add(id));
+        
+        // Update UI for visible posts
+        document.querySelectorAll(`.${CSS_CLASSES.GALLERY_ITEM}`).forEach(item => {
+            const postId = parseInt(item.dataset.postId);
+            if (state.selectedPosts.has(postId)) {
+                item.classList.add(CSS_CLASSES.SELECTED);
+                item.querySelector(`.${CSS_CLASSES.SELECT_CHECKBOX}`).classList.add(CSS_CLASSES.CHECKED);
+            }
+        });
+        
+        updateBulkControls();
+        
+        showNotification(`Selected ${data.count} matching posts`);
+        
+        // Restore button
+        if (btn) {
+            btn.textContent = originalText;
+            btn.disabled = false;
+        }
+    } catch (error) {
+        console.error('Failed to select all matching:', error);
+        showNotification('Failed to select all matching posts', 'error');
+        
+        // Restore button
+        if (btn) {
+            btn.textContent = originalText;
+            btn.disabled = false;
+        }
+    }
 }
 
 function invertSelection() {
@@ -573,10 +628,21 @@ function updateBulkControls() {
         controls.style.display = 'block';
         countSpan.textContent = `${count} selected`;
         
-        const totalMatchingPosts = state.allPosts.length;
+        // Get total matching posts from the total results display
+        const totalResultsEl = document.getElementById(ELEMENT_IDS.POSTS_TOTAL_RESULTS);
+        let totalMatchingPosts = state.allPosts.length;
+        
+        if (totalResultsEl && totalResultsEl.textContent) {
+            // Extract number from "Total: 1,234 posts"
+            const match = totalResultsEl.textContent.match(/Total:\s*([\d,]+)/);
+            if (match) {
+                totalMatchingPosts = parseInt(match[1].replace(/,/g, ''));
+            }
+        }
+        
         if (count < totalMatchingPosts && count > 0) {
             selectAllGlobalBtn.style.display = 'inline-block';
-            selectAllGlobalBtn.textContent = `✓✓ Select All Matching (${totalMatchingPosts} total)`;
+            selectAllGlobalBtn.textContent = `✓✓ Select All Matching (${totalMatchingPosts.toLocaleString()} total)`;
         } else {
             selectAllGlobalBtn.style.display = 'none';
         }
@@ -657,6 +723,29 @@ function renderPagination(total, perPage, currentPage) {
             if (e.key === 'Enter') {
                 gotoBtn.click();
             }
+        });
+    }
+    
+    const randomBtn = document.getElementById('randomPageBtn');
+    if (randomBtn) {
+        randomBtn.addEventListener('click', () => {
+            let randomPage;
+            if (totalPages > 1) {
+                do {
+                    randomPage = Math.floor(Math.random() * totalPages) + 1;
+                } while (randomPage === currentPage && totalPages > 1);
+            } else {
+                randomPage = 1;
+            }
+            
+            state.postsPage = randomPage;
+            loadPosts();
+            
+            // Visual feedback
+            randomBtn.style.transform = 'rotate(720deg)';
+            setTimeout(() => {
+                randomBtn.style.transform = '';
+            }, 500);
         });
     }
 }

@@ -109,6 +109,7 @@
     overflow-y: auto;
 }
 
+/* TAG WITH PERCENTAGE METER */
 .tag-sidebar .sidebar-tag {
     display: flex;
     justify-content: space-between;
@@ -120,10 +121,30 @@
     cursor: pointer;
     transition: all 0.2s ease;
     border: 1px solid transparent;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Searched tags - lime green background */
+.tag-sidebar .sidebar-tag.searched-tag {
+    background: #4ea329;
+}
+
+/* METER BACKGROUND - fills left to right based on percentage */
+.tag-sidebar .sidebar-tag::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    background: #1a4028;
+    transition: width 0.3s ease;
+    z-index: 0;
+    width: var(--tag-percentage, 0%);
+    opacity: 1;
 }
 
 .tag-sidebar:not(.collapsed) .sidebar-tag:hover {
-    background: var(--accent-dark);
     border-color: var(--accent);
 }
 
@@ -133,6 +154,8 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     margin-right: 16px;
+    position: relative;
+    z-index: 1;
 }
 
 .sidebar-tag-name.fade-edges {
@@ -155,12 +178,19 @@
     border-radius: 3px;
     min-width: 28px;
     text-align: center;
+    position: relative;
+    z-index: 1;
+    order: -1;
+    margin-right: auto;
 }
 
 .sidebar-tag-actions {
     display: flex;
     align-items: center;
     gap: 4px;
+    position: relative;
+    z-index: 1;
+    order: 1;
 }
 
 .sidebar-tag-actions button {

@@ -1,5 +1,6 @@
 """Business logic layer - OPTIMIZED with server-side advanced query parsing"""
 import logging
+import random
 from typing import Dict, List, Any, Optional
 from exceptions import PostNotFoundError, ValidationError, StorageError
 from validators import (
@@ -18,6 +19,7 @@ class PostService:
         self.file_manager = file_manager
         self.database = database
         self._cache_initialized = False
+        self._random_seed = None
     
     def _ensure_cache_initialized(self):
         """Ensure cache is initialized - runs ONCE per app lifecycle"""
@@ -33,6 +35,7 @@ class PostService:
                 logger.error(f"Failed to initialize cache: {e}", exc_info=True)
                 raise
     
+
     def get_posts(
         self, 
         filter_type: str = 'all', 
@@ -40,7 +43,8 @@ class PostService:
         offset: int = 0,
         sort_by: str = 'timestamp',
         order: str = 'DESC',
-        search_query: Optional[str] = None
+        search_query: Optional[str] = None,
+        random_seed: Optional[int] = None
     ) -> Dict[str, Any]:
         """
         Get posts with SERVER-SIDE pagination, sorting, and filtering
@@ -49,20 +53,18 @@ class PostService:
             filter_type: 'all', 'pending', 'saved'
             limit: Number of posts per page
             offset: Starting position
-            sort_by: Sort column (timestamp, score, id, owner, etc.)
+            sort_by: Sort column (timestamp, score, id, owner, etc.) or 'random'
             order: 'ASC' or 'DESC'
             search_query: Text search (searches owner, title, tags)
+            random_seed: Seed for random sort (maintains order across pagination)
         
         Returns: {
             'posts': [...],
             'total': count (with filters applied),
             'limit': limit,
-            'offset': offset
+            'offset': offset,
+            'random_seed': seed used (if random sort)
         }
-        
-        Raises:
-            ValidationError: If parameters are invalid
-            Exception: If database operation fails
         """
         filter_type = validate_filter_type(filter_type)
         
@@ -73,7 +75,41 @@ class PostService:
         status = None if filter_type == 'all' else filter_type
         total = self.database.get_cache_count(status=status, search_query=search_query)
         
-        # Get paginated posts with SERVER-SIDE sort/filter
+        # Handle random sort
+        if sort_by == 'random':
+            # Generate or reuse seed
+            if random_seed is None:
+                random_seed = random.randint(0, 2**31 - 1)
+            
+            # Get ALL matching posts
+            all_posts = self.database.get_cached_posts(
+                status=status,
+                limit=total,  # Get all matching posts
+                offset=0,
+                sort_by='post_id',  # Stable sort for consistency
+                order='ASC',
+                search_query=search_query
+            )
+            
+            # Shuffle with seed for consistency
+            random.seed(random_seed)
+            random.shuffle(all_posts)
+            random.seed()  # Reset seed
+            
+            # Apply pagination to shuffled results
+            posts = all_posts[offset:offset + limit]
+            
+            logger.info(f"Random sort: shuffled {len(all_posts)} posts, returning {len(posts)} (seed={random_seed})")
+            
+            return {
+                'posts': posts,
+                'total': total,
+                'limit': limit,
+                'offset': offset,
+                'random_seed': random_seed
+            }
+        
+        # Normal server-side sort
         posts = self.database.get_cached_posts(
             status=status,
             limit=limit,
@@ -91,33 +127,6 @@ class PostService:
             'limit': limit,
             'offset': offset
         }
-    
-    def get_posts_cached(
-        self, 
-        status=None, 
-        limit=10000, 
-        offset=0, 
-        sort_by='timestamp', 
-        order='DESC',
-        search_query=None
-    ):
-        """
-        Direct cache access - now with search support
-        """
-        try:
-            self._ensure_cache_initialized()
-            
-            return self.database.get_cached_posts(
-                status=status,
-                limit=limit,
-                offset=offset,
-                sort_by=sort_by,
-                order=order,
-                search_query=search_query
-            )
-        except Exception as e:
-            logger.error(f"Failed to get cached posts: {e}", exc_info=True)
-            return []
     
     def get_total_count(self, filter_type: str = 'all', search_query: Optional[str] = None) -> int:
         """

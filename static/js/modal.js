@@ -1,8 +1,8 @@
-// Modal Functions - FIXED owner filtering
+// Modal Functions - FIXED with mobile zoom removal
 import { state } from './state.js';
 import { renderModalContent, getMediaUrl, isVideoFile } from './posts_renderer.js';
 import { attachModalTagListeners } from './event_handlers.js';
-import { savePostAction, discardPostAction, filterByTag, filterByOwner } from './posts.js';
+import { savePostAction, discardPostAction, deletePostAction, filterByOwner } from './posts.js';
 import { ELEMENT_IDS, CSS_CLASSES } from './constants.js';
 
 function showFullMedia(postId) {
@@ -46,18 +46,28 @@ function displayModalPost(post) {
         img.style.display = 'block';
         img.src = mediaUrl;
         
-        // Setup zoom functionality
+        // Setup zoom functionality - DESKTOP ONLY
         let zoomed = false;
-        img.onclick = () => {
-            zoomed = !zoomed;
-            if (zoomed) {
-                img.classList.add('zoomed');
-                img.style.cursor = 'zoom-out';
-            } else {
-                img.classList.remove('zoomed');
-                img.style.cursor = 'zoom-in';
-            }
-        };
+        
+        // Check if desktop
+        const isDesktop = window.innerWidth > 768;
+        
+        if (isDesktop) {
+            img.onclick = () => {
+                zoomed = !zoomed;
+                if (zoomed) {
+                    img.classList.add('zoomed');
+                    img.style.cursor = 'zoom-out';
+                } else {
+                    img.classList.remove('zoomed');
+                    img.style.cursor = 'zoom-in';
+                }
+            };
+        } else {
+            // Mobile - no zoom
+            img.onclick = null;
+            img.style.cursor = 'default';
+        }
     }
     
     // Render modal content using renderer
@@ -90,12 +100,12 @@ function closeModal() {
     img.onclick = null;
 }
 
-// Setup click-outside-to-close
+// Setup click-outside-to-close - only on modal background
 document.addEventListener('DOMContentLoaded', () => {
     const modal = document.getElementById(ELEMENT_IDS.IMAGE_MODAL);
     if (modal) {
         modal.addEventListener('click', (e) => {
-            // Close if clicking on modal background (not content)
+            // Only close if clicking directly on modal background (not content)
             if (e.target === modal) {
                 closeModal();
             }
@@ -103,7 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-// Global functions for modal buttons (since they use inline onclick)
+// Global functions for modal buttons
 window.modalSavePost = async (postId) => {
     await savePostAction(postId);
     closeModal();
@@ -114,7 +124,11 @@ window.modalDiscardPost = async (postId) => {
     closeModal();
 };
 
-// FIXED: Use owner: prefix for proper filtering
+window.modalDeletePost = async (postId, dateFolder) => {
+    await deletePostAction(postId, dateFolder);
+    closeModal();
+};
+
 window.modalFilterByOwner = (owner) => {
     closeModal();
     filterByOwner(owner);
