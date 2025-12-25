@@ -134,20 +134,41 @@ body.modal-open {
     max-height: 80vh;
     object-fit: contain;
     border-radius: 8px;
+    cursor: zoom-in;
+    transition: transform 0.25s ease;
+    user-select: none;
+    user-drag: none;
+    -webkit-user-drag: none;
+}
+
+.modal-media.zoomed {
+    cursor: grab;
+    touch-action: none;       /* prevent scrolling on touch */
+    will-change: transform;   /* optimize GPU rendering */
+    transform-origin: 0 0;    /* top-left origin for proper dragging */
+}
+
+.modal-media.dragging {
+    cursor: grabbing;
+}
+
+.modal-media-container {
+    overflow: hidden;
+    position: relative;
+}
+
+.modal-actions,
+.modal-close,
+.modal-nav,
+.modal-info {
+    position: relative;
+    z-index: 20;
 }
 
 /* Remove zoom on mobile */
 @media (min-width: 769px) {
     .modal-media {
         cursor: zoom-in;
-    }
-    
-    .modal-media.zoomed {
-        cursor: zoom-out;
-        max-width: none;
-        max-height: none;
-        width: auto;
-        height: auto;
     }
 }
 

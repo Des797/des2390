@@ -45,29 +45,7 @@ function displayModalPost(post) {
         video.style.display = 'none';
         img.style.display = 'block';
         img.src = mediaUrl;
-        
-        // Setup zoom functionality - DESKTOP ONLY
-        let zoomed = false;
-        
-        // Check if desktop
-        const isDesktop = window.innerWidth > 768;
-        
-        if (isDesktop) {
-            img.onclick = () => {
-                zoomed = !zoomed;
-                if (zoomed) {
-                    img.classList.add('zoomed');
-                    img.style.cursor = 'zoom-out';
-                } else {
-                    img.classList.remove('zoomed');
-                    img.style.cursor = 'zoom-in';
-                }
-            };
-        } else {
-            // Mobile - no zoom
-            img.onclick = null;
-            img.style.cursor = 'default';
-        }
+        setupImageZoom(img);
     }
     
     // Render modal content using renderer
@@ -75,6 +53,74 @@ function displayModalPost(post) {
     
     // Attach tag click listeners
     attachModalTagListeners();
+    injectZoomControls();
+}
+
+let zoomLevel = 1;
+
+const MIN_ZOOM = 1;
+const MAX_ZOOM = 3;
+const ZOOM_STEP = 0.5;
+
+function setupImageZoom(img) {
+    resetZoom(img);
+
+    // Prevent native drag behavior
+    img.draggable = false;
+
+    const isDesktop = window.innerWidth > 768;
+    if (!isDesktop) return;
+}
+
+function applyTransform(img) {
+    img.style.transform = `scale(${zoomLevel})`;
+}
+
+function zoomIn(img) {
+    zoomLevel = Math.min(MAX_ZOOM, zoomLevel + ZOOM_STEP);
+    img.classList.add('zoomed');
+    applyTransform(img);
+}
+
+function zoomOut(img) {
+    zoomLevel = Math.max(MIN_ZOOM, zoomLevel - ZOOM_STEP);
+
+    if (zoomLevel === 1) {
+        resetZoom(img);
+    } else {
+        applyTransform(img);
+    }
+}
+
+function resetZoom(img) {
+    zoomLevel = 1;
+
+    img.classList.remove('zoomed');
+    img.style.transform = 'scale(1)';
+}
+
+function injectZoomControls() {
+    const actions = document.querySelector('.modal-actions');
+    if (!actions || actions.querySelector('.zoom-controls')) return;
+
+    const wrapper = document.createElement('div');
+    wrapper.className = 'zoom-controls';
+    wrapper.style.display = 'flex';
+    wrapper.style.gap = '8px';
+
+    wrapper.innerHTML = `
+        <button class="btn zoom-in">+</button>
+        <button class="btn zoom-out">−</button>
+        <button class="btn zoom-reset">Reset</button>
+    `;
+
+    actions.appendChild(wrapper);
+
+    const img = document.getElementById(ELEMENT_IDS.MODAL_IMAGE);
+
+    wrapper.querySelector('.zoom-in').onclick = () => zoomIn(img);
+    wrapper.querySelector('.zoom-out').onclick = () => zoomOut(img);
+    wrapper.querySelector('.zoom-reset').onclick = () => resetZoom(img);
 }
 
 function navigateModal(direction) {
