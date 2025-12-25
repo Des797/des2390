@@ -24,7 +24,6 @@ body.modal-open {
     margin: 20px auto;
     padding: 20px;
     position: relative;
-    pointer-events: auto;
 }
 
 /* Yellow tint for pending posts */
@@ -32,8 +31,8 @@ body.modal-open {
     background: rgba(234, 179, 8, 0.05);
 }
 
-/* Actions at top - MOVED ABOVE MEDIA */
-.modal-actions {
+/* Actions at TOP - above media */
+.modal-actions-top {
     display: flex;
     gap: 12px;
     flex-wrap: wrap;
@@ -44,7 +43,7 @@ body.modal-open {
     border: 1px solid var(--border-main);
 }
 
-.modal-actions button {
+.modal-actions-top button {
     flex: 1;
     min-width: 140px;
     padding: 14px 20px;
@@ -52,7 +51,7 @@ body.modal-open {
 }
 
 /* Heart icon button styling */
-.modal-actions .btn-like {
+.modal-actions-top .btn-like {
     min-width: 50px;
     padding: 14px;
     display: flex;
@@ -62,15 +61,15 @@ body.modal-open {
     transition: all 0.3s;
 }
 
-.modal-actions .btn-like:not(.liked) {
+.modal-actions-top .btn-like:not(.liked) {
     filter: grayscale(100%);
 }
 
-.modal-actions .btn-like:hover {
+.modal-actions-top .btn-like:hover {
     transform: scale(1.1);
 }
 
-.modal-actions .btn-like.liked {
+.modal-actions-top .btn-like.liked {
     filter: grayscale(0%);
     animation: heartBeat 0.3s;
 }
@@ -80,6 +79,7 @@ body.modal-open {
     50% { transform: scale(1.2); }
 }
 
+/* Media container - allows click outside to close */
 .modal-media-container {
     position: relative;
     display: flex;
@@ -88,12 +88,31 @@ body.modal-open {
     margin-bottom: 20px;
     background: #000;
     border-radius: 8px;
+    min-height: 400px;
+    max-height: 85vh;
     overflow: hidden;
-    pointer-events: auto;
 }
 
+/* Media wrapper - handles pan/zoom transform */
+.modal-media-wrapper {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    overflow: hidden;
+    cursor: grab;
+    touch-action: none;
+}
+
+.modal-media-wrapper.dragging {
+    cursor: grabbing;
+}
+
+/* Navigation buttons */
 .modal-nav {
-    position: fixed;
+    position: absolute;
     top: 50%;
     transform: translateY(-50%);
     background: rgba(16, 185, 129, 0.9);
@@ -108,11 +127,12 @@ body.modal-open {
     font-weight: bold;
     cursor: pointer;
     transition: all 0.3s ease;
-    z-index: 10;
+    z-index: 20;
     opacity: 0;
+    pointer-events: auto;
 }
 
-.modal-content:hover .modal-nav {
+.modal-media-container:hover .modal-nav {
     opacity: 1;
 }
 
@@ -129,69 +149,72 @@ body.modal-open {
     right: 20px;
 }
 
+/* Zoom controls - vertical sidebar */
+.modal-zoom-controls {
+    position: absolute;
+    right: 20px;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 20;
+    opacity: 0;
+    transition: opacity 0.3s;
+    pointer-events: auto;
+}
+
+.modal-media-container:hover .modal-zoom-controls {
+    opacity: 1;
+}
+
+.zoom-btn {
+    width: 40px;
+    height: 40px;
+    background: rgba(16, 185, 129, 0.9);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    font-size: 20px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.zoom-btn:hover {
+    background: var(--accent);
+    transform: scale(1.1);
+}
+
+.zoom-btn:active {
+    transform: scale(0.95);
+}
+
+/* Media elements */
 .modal-media {
     max-width: 100%;
-    max-height: 80vh;
+    max-height: 85vh;
     object-fit: contain;
     border-radius: 8px;
-    cursor: zoom-in;
-    transition: transform 0.25s ease;
     user-select: none;
-    user-drag: none;
-    -webkit-user-drag: none;
+    pointer-events: auto;
+    transition: none;
 }
 
 .modal-media.zoomed {
+    max-width: none;
+    max-height: none;
     cursor: grab;
-    touch-action: none;       /* prevent scrolling on touch */
-    will-change: transform;   /* optimize GPU rendering */
-    transform-origin: 0 0;    /* top-left origin for proper dragging */
 }
 
-.modal-media.dragging {
+.modal-media.zoomed.dragging {
     cursor: grabbing;
 }
 
-.modal-media-container {
-    overflow: hidden;
-    position: relative;
-}
-
-.modal-actions,
-.modal-close,
-.modal-nav,
-.modal-info {
-    position: relative;
-    z-index: 20;
-}
-
-/* Remove zoom on mobile */
-@media (min-width: 769px) {
-    .modal-media {
-        cursor: zoom-in;
-    }
-}
-
-@media (max-width: 768px) {
-    .modal-media {
-        cursor: default;
-    }
-    
-    .modal-nav {
-        width: 40px;
-        height: 80px;
-        font-size: 24px;
-    }
-    
-    .modal-nav.prev {
-        left: 10px;
-    }
-    
-    .modal-nav.next {
-        right: 10px;
-    }
-}
-
+/* Info section - below media */
 .modal-info {
     background: var(--bg-panel);
     border-radius: 8px;
@@ -253,7 +276,7 @@ body.modal-open {
     background: #10b981;
 }
 
-/* Tags section with edit button */
+/* Tags section */
 .modal-tags-section {
     margin-top: 20px;
 }
@@ -296,6 +319,7 @@ body.modal-open {
     background: var(--accent);
 }
 
+/* Video duration badge */
 .modal-media-container .video-duration {
     position: absolute;
     bottom: 20px;
@@ -316,6 +340,7 @@ body.modal-open {
     background: rgba(127, 29, 29, 0.95);
 }
 
+/* Close button */
 .modal-close {
     position: fixed;
     top: 20px;
@@ -338,4 +363,39 @@ body.modal-open {
 .modal-close:hover {
     background: var(--accent-strong);
     transform: scale(1.1);
+}
+
+/* Mobile adjustments */
+@media (max-width: 768px) {
+    .modal-nav {
+        width: 40px;
+        height: 80px;
+        font-size: 24px;
+    }
+    
+    .modal-nav.prev {
+        left: 10px;
+    }
+    
+    .modal-nav.next {
+        right: 10px;
+    }
+    
+    .modal-zoom-controls {
+        right: 10px;
+    }
+    
+    .zoom-btn {
+        width: 35px;
+        height: 35px;
+        font-size: 18px;
+    }
+    
+    .modal-actions-top {
+        flex-direction: column;
+    }
+    
+    .modal-actions-top button {
+        width: 100%;
+    }
 }

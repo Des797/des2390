@@ -463,7 +463,6 @@ function renderModalActions(post) {
 
 function renderModalContent(post) {
     const statusBadge = `<span class="status-badge status-${post.status}">${post.status === POST_STATUS.PENDING ? 'PENDING' : 'SAVED'}</span>`;
-    const actions = renderModalActions(post);
     const tagsSection = renderModalTagsSection(post);
     
     const fileSizeDisplay = post.file_size 
@@ -478,8 +477,6 @@ function renderModalContent(post) {
         : 'Unknown';
     
     return `
-        <div class="modal-actions">${actions}</div>
-        
         <h3>${post.title || `Post ${post.id}`}</h3>
         
         <div style="margin-bottom: 15px;">${statusBadge}</div>
@@ -573,6 +570,7 @@ window.generateMissingThumbnails = generateMissingThumbnails;
 export {
     renderPost,
     renderModalContent,
+    renderModalActions,
     renderPaginationButtons,
     renderTagHistoryItem,
     renderExpandedTags,

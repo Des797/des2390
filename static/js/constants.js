@@ -186,6 +186,8 @@ export const ELEMENT_IDS = {
     MODAL_IMAGE: 'modalImage',
     MODAL_VIDEO: 'modalVideo',
     MODAL_INFO: 'modalInfo',
+    MODAL_ACTIONS_TOP: 'modalActionsTop',
+    MODAL_ZOOM_CONTROLS: 'modalZoomControls',
     
     // Notification
     NOTIFICATION: 'notification',
