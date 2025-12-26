@@ -1,4 +1,4 @@
-// Modal Functions - Complete with Pan/Zoom - DEFENSIVE CHECKS
+// Modal Functions - Desktop zoom only, natural layout flow
 import { state } from './state.js';
 import { renderModalContent, renderModalActions, getMediaUrl, isVideoFile } from './posts_renderer.js';
 import { attachModalTagListeners } from './event_handlers.js';
@@ -13,13 +13,35 @@ let modalZoomState = {
     isDragging: false,
     startX: 0,
     startY: 0,
-    lastTouchDistance: 0
+    originalWidth: 0,
+    originalHeight: 0
 };
 
-const MIN_ZOOM = 0.5;
+let panHandlersAttached = false;
+
+const MIN_ZOOM = 1;
 const MAX_ZOOM = 5;
 const ZOOM_STEP = 0.5;
-const WHEEL_ZOOM_FACTOR = 0.1;
+
+const zoomControls = document.getElementById('modalZoomControls');
+if (zoomControls) zoomControls.style.pointerEvents = 'none';
+
+function debugZoom(label, img) {
+    const rect = img.getBoundingClientRect();
+
+    console.group(`[ZOOM DEBUG] ${label}`);
+    console.log('scale:', modalZoomState.scale);
+    console.log('translateX:', modalZoomState.translateX);
+    console.log('translateY:', modalZoomState.translateY);
+    console.log('img rect:', {
+        top: rect.top,
+        left: rect.left,
+        width: rect.width,
+        height: rect.height
+    });
+    console.log('transform:', img.style.transform);
+    console.groupEnd();
+}
 
 function showFullMedia(postId) {
     const posts = state.allPosts;
@@ -49,180 +71,103 @@ function showFullMedia(postId) {
 function displayModalPost(post) {
     const isVideo = isVideoFile(post.file_type);
     const mediaUrl = getMediaUrl(post);
-
-    // Wrap DOM lookups with defensive checks
+    
     const img = document.getElementById(ELEMENT_IDS.MODAL_IMAGE);
     const video = document.getElementById(ELEMENT_IDS.MODAL_VIDEO);
-    const actionsTop = document.getElementById('modalActionsTop');
-    const zoomControls = document.getElementById('modalZoomControls');
-    const modalInfo = document.getElementById(ELEMENT_IDS.MODAL_INFO);
-
-    // Retry if modal elements not yet in DOM
-    if (!img || !video || !actionsTop || !zoomControls || !modalInfo) {
-        console.warn('Modal elements not found, retrying in 50ms...');
-        setTimeout(() => displayModalPost(post), 50);
-        return;
-    }
-
+    
     // Render actions at TOP
-    actionsTop.innerHTML = renderModalActions(post);
-
+    const actionsHtml = renderModalActions(post);
+    document.getElementById('modalActionsTop').innerHTML = actionsHtml;
+    
+    // Check if mobile
+    const isMobile = window.innerWidth <= 768;
+    
     if (isVideo) {
         img.style.display = 'none';
         video.style.display = 'block';
         video.src = mediaUrl;
-
+        
         // Hide zoom controls for video
-        zoomControls.style.display = 'none';
+        document.getElementById('modalZoomControls').style.display = 'none';
     } else {
         video.style.display = 'none';
         img.style.display = 'block';
         img.src = mediaUrl;
-
-        // Show zoom controls for images
-        zoomControls.style.display = 'flex';
-
-        // Setup pan/zoom
-        setupImagePanZoom(img);
+        
+        // Show zoom controls only on desktop
+        if (!isMobile) {
+            document.getElementById('modalZoomControls').style.display = 'flex';
+            
+            // Setup pan/zoom for desktop only
+            setupImagePanZoom(img);
+        } else {
+            document.getElementById('modalZoomControls').style.display = 'none';
+        }
     }
-
+    
     // Render modal info (below media)
-    modalInfo.innerHTML = renderModalContent(post);
-
+    document.getElementById(ELEMENT_IDS.MODAL_INFO).innerHTML = renderModalContent(post);
+    
     // Attach tag click listeners
     attachModalTagListeners();
+    
+    img.onload = () => {
+        console.log('[IMAGE LOADED]', {
+            width: img.width,
+            height: img.height,
+            offsetWidth: img.offsetWidth,
+            offsetHeight: img.offsetHeight,
+            rect: img.getBoundingClientRect()
+        });
+
+        modalZoomState.scale = 1;
+        modalZoomState.translateX = 0;
+        modalZoomState.translateY = 0;
+
+        applyInitialVerticalOffset(img);
+
+        const zoomControls = document.getElementById('modalZoomControls');
+        if (zoomControls) zoomControls.style.pointerEvents = 'auto';
+    };
+
 }
 
 function setupImagePanZoom(img) {
-    // Keep existing zoom level when navigating
-    // (zoom is only reset when modal is closed)
+    if (panHandlersAttached) return;
+    panHandlersAttached = true;
+
     applyTransform(img);
-    
-    const wrapper = document.getElementById('modalMediaWrapper');
-    if (!wrapper) return;
-    
-    // Desktop: Mouse wheel zoom
-    const handleWheel = (e) => {
-        if (!img || img.style.display === 'none') return;
-        
-        e.preventDefault();
-        
-        const delta = -Math.sign(e.deltaY);
-        const newZoom = modalZoomState.scale + (delta * WHEEL_ZOOM_FACTOR);
-        
-        modalZoomState.scale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoom));
-        
-        if (modalZoomState.scale === 1) {
-            modalZoomState.translateX = 0;
-            modalZoomState.translateY = 0;
-        }
-        
-        applyTransform(img);
-    };
-    
-    wrapper.addEventListener('wheel', handleWheel, { passive: false });
-    
-    // Desktop: Click and drag
+
     const handleMouseDown = (e) => {
         if (!img || img.style.display === 'none') return;
-        if (modalZoomState.scale <= 1) return; // Only drag when zoomed
-        
+        if (modalZoomState.scale <= 1) return;
+        if (e.target !== img) return;
+
+        e.preventDefault();
+        e.stopPropagation();
+
         modalZoomState.isDragging = true;
         modalZoomState.startX = e.clientX - modalZoomState.translateX;
         modalZoomState.startY = e.clientY - modalZoomState.translateY;
-        
-        wrapper.classList.add('dragging');
-        img.classList.add('dragging');
     };
-    
+
     const handleMouseMove = (e) => {
         if (!modalZoomState.isDragging) return;
-        
-        e.preventDefault();
+
         modalZoomState.translateX = e.clientX - modalZoomState.startX;
         modalZoomState.translateY = e.clientY - modalZoomState.startY;
-        
+
         applyTransform(img);
     };
-    
+
     const handleMouseUp = () => {
         modalZoomState.isDragging = false;
-        wrapper.classList.remove('dragging');
-        img.classList.remove('dragging');
     };
-    
-    wrapper.addEventListener('mousedown', handleMouseDown);
+
+    img.addEventListener('mousedown', handleMouseDown);
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
-    
-    // Mobile: Pinch zoom
-    const handleTouchStart = (e) => {
-        if (!img || img.style.display === 'none') return;
-        
-        if (e.touches.length === 2) {
-            // Pinch zoom
-            const touch1 = e.touches[0];
-            const touch2 = e.touches[1];
-            modalZoomState.lastTouchDistance = Math.hypot(
-                touch2.clientX - touch1.clientX,
-                touch2.clientY - touch1.clientY
-            );
-        } else if (e.touches.length === 1 && modalZoomState.scale > 1) {
-            // Single touch drag (when zoomed)
-            modalZoomState.isDragging = true;
-            modalZoomState.startX = e.touches[0].clientX - modalZoomState.translateX;
-            modalZoomState.startY = e.touches[0].clientY - modalZoomState.translateY;
-        }
-    };
-    
-    const handleTouchMove = (e) => {
-        if (!img || img.style.display === 'none') return;
-        
-        if (e.touches.length === 2) {
-            // Pinch zoom
-            e.preventDefault();
-            
-            const touch1 = e.touches[0];
-            const touch2 = e.touches[1];
-            const currentDistance = Math.hypot(
-                touch2.clientX - touch1.clientX,
-                touch2.clientY - touch1.clientY
-            );
-            
-            if (modalZoomState.lastTouchDistance > 0) {
-                const scaleFactor = currentDistance / modalZoomState.lastTouchDistance;
-                modalZoomState.scale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, modalZoomState.scale * scaleFactor));
-                
-                if (modalZoomState.scale === 1) {
-                    modalZoomState.translateX = 0;
-                    modalZoomState.translateY = 0;
-                }
-                
-                applyTransform(img);
-            }
-            
-            modalZoomState.lastTouchDistance = currentDistance;
-        } else if (e.touches.length === 1 && modalZoomState.isDragging) {
-            // Single touch drag
-            e.preventDefault();
-            
-            modalZoomState.translateX = e.touches[0].clientX - modalZoomState.startX;
-            modalZoomState.translateY = e.touches[0].clientY - modalZoomState.startY;
-            
-            applyTransform(img);
-        }
-    };
-    
-    const handleTouchEnd = () => {
-        modalZoomState.isDragging = false;
-        modalZoomState.lastTouchDistance = 0;
-    };
-    
-    wrapper.addEventListener('touchstart', handleTouchStart, { passive: false });
-    wrapper.addEventListener('touchmove', handleTouchMove, { passive: false });
-    wrapper.addEventListener('touchend', handleTouchEnd);
-    
-    // Setup zoom buttons
+
     setupZoomButtons(img);
 }
 
@@ -232,19 +177,43 @@ function setupZoomButtons(img) {
     const zoomReset = document.querySelector('.zoom-reset');
     
     if (zoomIn) {
-        zoomIn.onclick = () => {
-            modalZoomState.scale = Math.min(MAX_ZOOM, modalZoomState.scale + ZOOM_STEP);
+        zoomIn.onclick = (e) => {
+            e.stopPropagation();
+
+            console.log('--- ZOOM IN CLICK ---');
+
+            const prevScale = modalZoomState.scale;
+            const nextScale = Math.min(MAX_ZOOM, prevScale + ZOOM_STEP);
+
+            console.log('prevScale:', prevScale);
+            console.log('nextScale:', nextScale);
+            console.log('before:', {
+                x: modalZoomState.translateX,
+                y: modalZoomState.translateY
+            });
+
+            modalZoomState.scale = nextScale;
+
             applyTransform(img);
+
+            console.log('after:', {
+                x: modalZoomState.translateX,
+                y: modalZoomState.translateY
+            });
         };
     }
     
     if (zoomOut) {
-        zoomOut.onclick = () => {
+        zoomOut.onclick = (e) => {
+            e.stopPropagation();
             modalZoomState.scale = Math.max(MIN_ZOOM, modalZoomState.scale - ZOOM_STEP);
             
             if (modalZoomState.scale === 1) {
                 modalZoomState.translateX = 0;
                 modalZoomState.translateY = 0;
+                img.style.position = '';
+                img.style.top = '';
+                img.style.left = '';
             }
             
             applyTransform(img);
@@ -252,10 +221,14 @@ function setupZoomButtons(img) {
     }
     
     if (zoomReset) {
-        zoomReset.onclick = () => {
+        zoomReset.onclick = (e) => {
+            e.stopPropagation();
             modalZoomState.scale = 1;
             modalZoomState.translateX = 0;
             modalZoomState.translateY = 0;
+            img.style.position = '';
+            img.style.top = '';
+            img.style.left = '';
             applyTransform(img);
         };
     }
@@ -263,16 +236,40 @@ function setupZoomButtons(img) {
 
 function applyTransform(img) {
     if (!img) return;
-    
-    const transform = `scale(${modalZoomState.scale}) translate(${modalZoomState.translateX / modalZoomState.scale}px, ${modalZoomState.translateY / modalZoomState.scale}px)`;
-    img.style.transform = transform;
-    
-    if (modalZoomState.scale > 1) {
+
+    const { scale, translateX, translateY } = modalZoomState;
+
+    if (scale > 1) {
         img.classList.add('zoomed');
+        img.style.transform = `translate(calc(-50% + ${translateX}px), calc(-50% + ${translateY}px)) scale(${scale})`;
     } else {
         img.classList.remove('zoomed');
+        img.style.transform = '';
+        img.style.position = '';
+        img.style.top = '';
+        img.style.left = '';
+    }
+
+    debugZoom('applyTransform', img);
+}
+
+function applyInitialVerticalOffset(img) {
+    const rect = img.getBoundingClientRect();
+    const viewportHeight = window.innerHeight;
+
+    const overflow = rect.bottom - viewportHeight;
+
+    console.log('[INIT OFFSET]');
+    console.log('img bottom:', rect.bottom);
+    console.log('viewport height:', viewportHeight);
+    console.log('overflow:', overflow);
+
+    if (overflow > 0) {
+        modalZoomState.translateY = -overflow / 2;
+        applyTransform(img);
     }
 }
+
 
 function navigateModal(direction) {
     const posts = state.allPosts;
@@ -285,43 +282,62 @@ function navigateModal(direction) {
 function closeModal() {
     const modal = document.getElementById(ELEMENT_IDS.IMAGE_MODAL);
     modal.classList.remove(CSS_CLASSES.SHOW);
-    
-    // Restore body scroll
+
     document.body.classList.remove('modal-open');
-    
+
     const video = document.getElementById(ELEMENT_IDS.MODAL_VIDEO);
-    if (video) {
-        video.pause();
-        video.src = '';
-    }
-    
-    // Reset zoom state when closing
+    video.pause();
+    video.src = '';
+
     modalZoomState = {
         scale: 1,
         translateX: 0,
         translateY: 0,
         isDragging: false,
         startX: 0,
-        startY: 0,
-        lastTouchDistance: 0
+        startY: 0
     };
-    
+
+    panHandlersAttached = false;
+
     const img = document.getElementById(ELEMENT_IDS.MODAL_IMAGE);
-    if (img) {
-        img.classList.remove('zoomed');
-        img.style.transform = '';
-    }
+    img.classList.remove('zoomed');
+    img.style.transform = '';
 }
 
-// Setup click-outside-to-close - only on modal background
+// Setup click-outside-to-close
 document.addEventListener('DOMContentLoaded', () => {
     const modal = document.getElementById(ELEMENT_IDS.IMAGE_MODAL);
-    if (modal) {
+    const mediaContainer = document.getElementById('modalMediaContainer');
+    
+    if (modal && mediaContainer) {
+        // Click on modal background closes
         modal.addEventListener('click', (e) => {
-            // Close if clicking on modal background OR media container background
-            if (e.target === modal || e.target.id === 'modalMediaContainer') {
+            if (e.target === modal) {
                 closeModal();
             }
+        });
+        
+        // Click on media container (around image) closes
+        mediaContainer.addEventListener('click', (e) => {
+            const clickedElement = e.target;
+            const img = document.getElementById(ELEMENT_IDS.MODAL_IMAGE);
+            const video = document.getElementById(ELEMENT_IDS.MODAL_VIDEO);
+            
+            // Don't close if clicking on:
+            // - The image/video
+            // - Nav buttons
+            // - Zoom controls
+            if (clickedElement === img || 
+                clickedElement === video ||
+                clickedElement.closest('.modal-nav') ||
+                clickedElement.closest('.modal-zoom-controls') ||
+                clickedElement.closest('.video-duration')) {
+                return;
+            }
+            
+            // Clicked on empty space - close
+            closeModal();
         });
     }
 });
@@ -334,7 +350,7 @@ window.modalSavePost = async (postId) => {
 
 window.modalDiscardPost = async (postId) => {
     await discardPostAction(postId);
-    closeModal();
+    navigateModal(1);
 };
 
 window.modalDeletePost = async (postId, dateFolder) => {

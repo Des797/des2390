@@ -240,39 +240,39 @@ Examples: frog red_* *_dress"></textarea>
         </div>
     </div>
 
-    <!-- MODAL -->
+    <!-- MODAL - FIXED STRUCTURE -->
     <div id="imageModal" class="modal">
         <div class="modal-close" id="modalClose">×</div>
         
         <div class="modal-content">
-            <!-- Actions at TOP - above media - THIS IS NEW -->
+            <!-- Actions at TOP -->
             <div class="modal-actions-top" id="modalActionsTop">
-                <!-- Actions will be injected here by JavaScript -->
+                <!-- Actions injected by JavaScript -->
             </div>
             
-            <!-- Media container with click-outside-to-close -->
+            <!-- Media container -->
             <div class="modal-media-container" id="modalMediaContainer">
-                <!-- Navigation buttons -->
+                <!-- Navigation -->
                 <div class="modal-nav prev" id="modalPrev">‹</div>
                 <div class="modal-nav next" id="modalNext">›</div>
                 
-                <!-- Zoom controls - vertical sidebar - THIS IS NEW -->
-                <div class="modal-zoom-controls" id="modalZoomControls">
+                <!-- Zoom controls -->
+                <div class="modal-zoom-controls" id="modalZoomControls" style="display: none;">
                     <button class="zoom-btn zoom-in" title="Zoom In">+</button>
                     <button class="zoom-btn zoom-reset" title="Reset Zoom">⟲</button>
                     <button class="zoom-btn zoom-out" title="Zoom Out">−</button>
                 </div>
                 
-                <!-- Media wrapper for pan/zoom - THIS IS NEW -->
+                <!-- Media wrapper -->
                 <div class="modal-media-wrapper" id="modalMediaWrapper">
-                    <img id="modalImage" class="modal-media" alt="Full size image">
-                    <video id="modalVideo" class="modal-media" controls></video>
+                    <img id="modalImage" class="modal-media" alt="Full size image" style="display: none;">
+                    <video id="modalVideo" class="modal-media" controls style="display: none;"></video>
                 </div>
             </div>
             
-            <!-- Info section - below media -->
+            <!-- Info section -->
             <div class="modal-info" id="modalInfo">
-                <!-- Info will be injected here by JavaScript -->
+                <!-- Info injected by JavaScript -->
             </div>
         </div>
     </div>
@@ -282,7 +282,6 @@ Examples: frog red_* *_dress"></textarea>
         <span id="notificationText"></span>
     </div>
 
-    <!-- Tag counts loaded via API, not inlined -->
     <script type="module" src="/static/js/main.js"></script>
 </body>
 </html>

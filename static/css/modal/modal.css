@@ -31,7 +31,7 @@ body.modal-open {
     background: rgba(234, 179, 8, 0.05);
 }
 
-/* Actions at TOP - above media */
+/* Actions at TOP */
 .modal-actions-top {
     display: flex;
     gap: 12px;
@@ -79,38 +79,27 @@ body.modal-open {
     50% { transform: scale(1.2); }
 }
 
-/* Media container - allows click outside to close */
+/* Media container - height based on image, pushes info card down naturally */
 .modal-media-container {
     position: relative;
     display: flex;
     justify-content: center;
     align-items: center;
     margin-bottom: 20px;
-    background: #000;
     border-radius: 8px;
-    min-height: 400px;
-    max-height: 85vh;
-    overflow: hidden;
+    cursor: pointer;
+    isolation: isolate;
 }
 
-/* Media wrapper - handles pan/zoom transform */
+/* Media wrapper - grows with image, no overflow clipping */
 .modal-media-wrapper {
     position: relative;
-    width: 100%;
-    height: 100%;
     display: flex;
     justify-content: center;
     align-items: center;
-    overflow: hidden;
-    cursor: grab;
-    touch-action: none;
 }
 
-.modal-media-wrapper.dragging {
-    cursor: grabbing;
-}
-
-/* Navigation buttons */
+/* Navigation buttons - positioned on container, not affected by image */
 .modal-nav {
     position: absolute;
     top: 50%;
@@ -127,7 +116,7 @@ body.modal-open {
     font-weight: bold;
     cursor: pointer;
     transition: all 0.3s ease;
-    z-index: 20;
+    z-index: 100;
     opacity: 0;
     pointer-events: auto;
 }
@@ -149,16 +138,16 @@ body.modal-open {
     right: 20px;
 }
 
-/* Zoom controls - vertical sidebar */
+/* Zoom controls - positioned on container, not affected by image */
 .modal-zoom-controls {
     position: absolute;
-    right: 20px;
+    right: 90px;
     top: 50%;
     transform: translateY(-50%);
     display: flex;
     flex-direction: column;
     gap: 8px;
-    z-index: 20;
+    z-index: 100;
     opacity: 0;
     transition: opacity 0.3s;
     pointer-events: auto;
@@ -193,28 +182,33 @@ body.modal-open {
     transform: scale(0.95);
 }
 
-/* Media elements */
+/* Media elements - these can transform without affecting layout */
 .modal-media {
     max-width: 100%;
     max-height: 85vh;
     object-fit: contain;
     border-radius: 8px;
     user-select: none;
-    pointer-events: auto;
+    display: block;
     transition: none;
+    pointer-events: auto;
 }
 
 .modal-media.zoomed {
-    max-width: none;
-    max-height: none;
+    position: absolute;
+    top: 50%;
+    left: 50%;
     cursor: grab;
+    transform-origin: center center;
+    max-width: none; /* allow scaling beyond container */
+    max-height: none;
 }
 
-.modal-media.zoomed.dragging {
+.modal-media.dragging {
     cursor: grabbing;
 }
 
-/* Info section - below media */
+/* Info section - flows naturally below media container */
 .modal-info {
     background: var(--bg-panel);
     border-radius: 8px;
@@ -330,9 +324,10 @@ body.modal-open {
     border-radius: 8px;
     font-size: 18px;
     font-weight: 600;
-    z-index: 10;
+    z-index: 50;
     min-width: 70px;
     text-align: center;
+    pointer-events: none;
 }
 
 .modal-media-container .video-duration.error {
@@ -367,6 +362,31 @@ body.modal-open {
 
 /* Mobile adjustments */
 @media (max-width: 768px) {
+    /* HIDE zoom controls entirely on mobile */
+    .modal-zoom-controls {
+        display: none !important;
+    }
+    
+    /* Compact action buttons on mobile */
+    .modal-actions-top {
+        padding: 8px;
+        margin-bottom: 10px;
+        gap: 6px;
+    }
+    
+    .modal-actions-top button {
+        padding: 8px 12px;
+        font-size: 13px;
+        min-width: 80px;
+    }
+    
+    .modal-actions-top .btn-like {
+        min-width: 40px;
+        padding: 8px;
+        font-size: 16px;
+    }
+    
+    /* Smaller nav buttons on mobile */
     .modal-nav {
         width: 40px;
         height: 80px;
@@ -381,21 +401,16 @@ body.modal-open {
         right: 10px;
     }
     
-    .modal-zoom-controls {
-        right: 10px;
+    /* No zooming on mobile - image stays at normal size */
+    .modal-media {
+        max-width: 100%;
+        max-height: 70vh;
     }
     
-    .zoom-btn {
-        width: 35px;
-        height: 35px;
-        font-size: 18px;
-    }
-    
-    .modal-actions-top {
-        flex-direction: column;
-    }
-    
-    .modal-actions-top button {
-        width: 100%;
+    /* Ensure media doesn't transform on mobile */
+    .modal-media.zoomed {
+        position: static;
+        cursor: default;
+        transform: none !important;
     }
 }
