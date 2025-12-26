@@ -1,4 +1,4 @@
-// Modal Functions - Complete with Pan/Zoom
+// Modal Functions - Complete with Pan/Zoom - DEFENSIVE CHECKS
 import { state } from './state.js';
 import { renderModalContent, renderModalActions, getMediaUrl, isVideoFile } from './posts_renderer.js';
 import { attachModalTagListeners } from './event_handlers.js';
@@ -50,10 +50,10 @@ function displayModalPost(post) {
     const isVideo = isVideoFile(post.file_type);
     const mediaUrl = getMediaUrl(post);
 
-    // Wrap DOM lookups
+    // Wrap DOM lookups with defensive checks
     const img = document.getElementById(ELEMENT_IDS.MODAL_IMAGE);
     const video = document.getElementById(ELEMENT_IDS.MODAL_VIDEO);
-    const actionsTop = document.getElementById(ELEMENT_IDS.MODAL_ACTIONS_TOP);
+    const actionsTop = document.getElementById('modalActionsTop');
     const zoomControls = document.getElementById('modalZoomControls');
     const modalInfo = document.getElementById(ELEMENT_IDS.MODAL_INFO);
 
@@ -93,13 +93,13 @@ function displayModalPost(post) {
     attachModalTagListeners();
 }
 
-
 function setupImagePanZoom(img) {
     // Keep existing zoom level when navigating
     // (zoom is only reset when modal is closed)
     applyTransform(img);
     
     const wrapper = document.getElementById('modalMediaWrapper');
+    if (!wrapper) return;
     
     // Desktop: Mouse wheel zoom
     const handleWheel = (e) => {
@@ -290,8 +290,10 @@ function closeModal() {
     document.body.classList.remove('modal-open');
     
     const video = document.getElementById(ELEMENT_IDS.MODAL_VIDEO);
-    video.pause();
-    video.src = '';
+    if (video) {
+        video.pause();
+        video.src = '';
+    }
     
     // Reset zoom state when closing
     modalZoomState = {
@@ -305,8 +307,10 @@ function closeModal() {
     };
     
     const img = document.getElementById(ELEMENT_IDS.MODAL_IMAGE);
-    img.classList.remove('zoomed');
-    img.style.transform = '';
+    if (img) {
+        img.classList.remove('zoomed');
+        img.style.transform = '';
+    }
 }
 
 // Setup click-outside-to-close - only on modal background
