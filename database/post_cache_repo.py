@@ -2,6 +2,8 @@ import json
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 import logging
+import sqlite3
+import time
 from query_translator import get_query_translator
 
 logger = logging.getLogger(__name__)
@@ -19,8 +21,8 @@ class PostCacheRepository:
                         """INSERT OR REPLACE INTO post_cache 
                            (post_id, status, title, owner, score, rating, 
                             width, height, file_type, tags, date_folder, 
-                            timestamp, file_path, downloaded_at, created_at, duration)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                            timestamp, file_path, downloaded_at, created_at, duration, file_size)
+                           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                         (
                             post_data['id'],
                             post_data.get('status', 'pending'),
@@ -37,7 +39,8 @@ class PostCacheRepository:
                             post_data.get('file_path', ''),
                             post_data.get('downloaded_at', ''),
                             post_data.get('created_at', ''),
-                            post_data.get('duration', None)
+                            post_data.get('duration', None),
+                            post_data.get('file_size', None)
                         )
                     )
             logger.info(f"Cached post {post_data['id']}")
@@ -205,7 +208,8 @@ class PostCacheRepository:
                     'file_path': row[12],
                     'downloaded_at': row[13],
                     'created_at': row[14],
-                    'duration': row[15] if len(row) > 15 else None
+                    'duration': row[15] if len(row) > 15 else None,
+                    'file_size': row[16] if len(row) > 16 else None
                 })
             
             logger.info(f"[PostCacheRepository] Returning {len(posts)} posts")

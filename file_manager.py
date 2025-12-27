@@ -126,6 +126,13 @@ class FileManager:
                             post_data['file_type'] = actual_ext
                             post_data['file_path'] = os.path.join(self.temp_path, actual_filename)
                             post_data['_metadata_corrected'] = True
+                        
+                        # Calculate file size
+                        media_path = os.path.join(self.temp_path, actual_filename)
+                        try:
+                            post_data['file_size'] = os.path.getsize(media_path)
+                        except OSError:
+                            post_data['file_size'] = None
                     
                     # Duration will be calculated on-demand, not stored
                     if 'duration' not in post_data:
@@ -235,12 +242,24 @@ class FileManager:
                         if post_data.get('file_path') != correct_path:
                             post_data['file_path'] = correct_path
                             metadata_changed = True
+                        
+                        # Calculate file size
+                        try:
+                            post_data['file_size'] = os.path.getsize(correct_path)
+                        except OSError:
+                            post_data['file_size'] = None
                     else:
                         file_ext = post_data.get('file_type', '.jpg')
                         fallback_path = os.path.join(folder_path, f"{post_id}{file_ext}")
                         if post_data.get('file_path') != fallback_path:
                             post_data['file_path'] = fallback_path
                             metadata_changed = True
+                        
+                        # Calculate file size for fallback path
+                        try:
+                            post_data['file_size'] = os.path.getsize(fallback_path)
+                        except OSError:
+                            post_data['file_size'] = None
 
                     if metadata_changed:
                         post_data.pop('_metadata_corrected', None)
@@ -258,7 +277,7 @@ class FileManager:
             
             return folder_posts
         
-        # 🔧 FIX: execute folder loaders and collect results
+        # Execute folder loaders and collect results
         with ThreadPoolExecutor(max_workers=10) as executor:
             futures = [
                 executor.submit(load_folder_posts, folder)

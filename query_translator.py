@@ -1,7 +1,7 @@
 """
 Advanced Query Parser: Frontend Syntax → SQL Translator
-Supports all frontend query_parser.js functionality on the backend
 FIXED: Handles tags with parentheses like luke_(star_wars)
+ADDED: Tag-Count:, Duration:, Size:, Matching-Tags: operators
 """
 import re
 import logging
@@ -38,18 +38,35 @@ class QueryTranslator:
         'user': 'owner',
         'creator': 'owner',
         'author': 'owner',
-        'id': 'post_id'
+        'id': 'post_id',
+        'tag-count': 'tag_count',
+        'tagcount': 'tag_count',
+        'tags': 'tag_count',
+        'size': 'file_size',
+        'filesize': 'file_size',
+        'matching-tags': 'matching_tags',
+        'matchingtags': 'matching_tags',
+        'matches': 'matching_tags'
     }
     
-    NUMERIC_FIELDS = {'score', 'width', 'height', 'post_id'}
+    NUMERIC_FIELDS = {'score', 'width', 'height', 'post_id', 'tag_count', 'file_size', 'duration', 'matching_tags'}
     TEXT_FIELDS = {'owner', 'title', 'rating', 'file_type'}
+    
+    # Size unit conversions to bytes
+    SIZE_UNITS = {
+        'b': 1,
+        'byte': 1, 'bytes': 1,
+        'kb': 1024, 'kilobyte': 1024, 'kilobytes': 1024,
+        'mb': 1024**2, 'megabyte': 1024**2, 'megabytes': 1024**2,
+        'gb': 1024**3, 'gigabyte': 1024**3, 'gigabytes': 1024**3,
+        'tb': 1024**4, 'terabyte': 1024**4, 'terabytes': 1024**4
+    }
     
     def __init__(self):
         self.exclusion_prefixes = ['-', '!', 'exclude:', 'remove:', 'negate:', 'not:']
-        logger.info("QueryTranslator initialized")
+        logger.info("QueryTranslator initialized with new operators")
     
     def translate(self, query: str, status: Optional[str] = None) -> Tuple[str, List[Any]]:
-        logger.info(f"[QueryTranslator] Translating query: '{query}' with status='{status}'")
         """
         Translate frontend query to SQL WHERE clause
         
@@ -61,7 +78,6 @@ class QueryTranslator:
             (sql_where_clause, params_list)
         """
         if not query or not query.strip():
-            # No query - just status filter
             if status:
                 return "status = ?", [status]
             return "1=1", []
@@ -85,7 +101,6 @@ class QueryTranslator:
             
         except Exception as e:
             logger.error(f"Query translation failed for '{query}': {e}", exc_info=True)
-            # Fallback: treat as simple text search
             if status:
                 return "status = ?", [status]
             return "1=1", []
@@ -99,58 +114,102 @@ class QueryTranslator:
         logger.debug(f"[Translator] AST: {ast}")
         return ast
     
+    def _is_field_prefix(self, text: str, pos: int) -> bool:
+        """
+        Check if the character before position is part of a field: prefix
+        This helps distinguish between grouping parens and tag parens
+        """
+        if pos == 0:
+            return False
+        
+        # Look backwards for field: pattern
+        check_start = max(0, pos - 50)  # Check up to 50 chars back
+        substring = text[check_start:pos]
+        
+        # Check if we have field: pattern right before this position
+        field_pattern = r'(\w+):([^\s]*?)$'
+        match = re.search(field_pattern, substring)
+        
+        if match:
+            # We found a field: pattern, now check if we're inside the value part
+            value_part = match.group(2)
+            return True
+        
+        return False
+    
     def _tokenize(self, query: str) -> List[str]:
         """
-        Tokenize query string
-        FIXED: Distinguishes between grouping parens and tag parens
+        Tokenize query string with SMART parenthesis detection
         
-        Strategy: Check OUTSIDE the parentheses for non-whitespace characters.
-        - If preceded by non-whitespace (like underscore): tag paren
-        - If followed by non-whitespace (like underscore): tag paren
-        - Exception: operators (: ! - ,) are not tag characters
-        - Otherwise: grouping paren for OR logic
+        Strategy:
+        1. If ( or ) appears after field: prefix, it's part of the value
+        2. If ( or ) is preceded/followed by alphanumeric or underscore, it's part of a tag
+        3. Otherwise, it's a grouping operator
         """
-        # Characters that indicate grouping parens, not tag parens
-        operator_chars = {':', '!', '-', ',', '|', '~', ' '}
-        
         tokens = []
         buffer = ''
         paren_depth = 0
         i = 0
+        in_field_value = False
         
         while i < len(query):
             char = query[i]
             
+            # Check if we're starting a field value
+            if char == ':' and buffer and buffer[-1].isalnum():
+                buffer += char
+                in_field_value = True
+                i += 1
+                continue
+            
+            # Reset field value flag on whitespace at depth 0
+            if char == ' ' and paren_depth == 0:
+                in_field_value = False
+            
             if char == '(':
-                # Look at character immediately BEFORE the (
-                # If it exists and is non-whitespace AND not an operator, it's part of a tag
-                if buffer and buffer[-1] not in operator_chars:
-                    buffer += char
-                    i += 1
-                    continue
+                # Determine if this is a grouping paren or part of a tag/value
+                is_tag_paren = False
                 
-                # It's a grouping paren
-                if buffer.strip() and paren_depth == 0:
-                    tokens.append(buffer.strip())
-                    buffer = ''
-                paren_depth += 1
-                tokens.append('(')
+                # Check if we're inside a field value
+                if in_field_value or self._is_field_prefix(query, i):
+                    is_tag_paren = True
+                # Check if preceded by alphanumeric or underscore
+                elif buffer and (buffer[-1].isalnum() or buffer[-1] == '_'):
+                    is_tag_paren = True
+                
+                if is_tag_paren:
+                    buffer += char
+                else:
+                    # Grouping paren
+                    if buffer.strip() and paren_depth == 0:
+                        tokens.append(buffer.strip())
+                        buffer = ''
+                    paren_depth += 1
+                    tokens.append('(')
                 
             elif char == ')':
-                # Look at character immediately AFTER the )
-                # If it exists and is non-whitespace AND not an operator, it's part of a tag
-                next_char = query[i + 1] if i + 1 < len(query) else None
-                if next_char and next_char not in operator_chars and next_char not in [')', '(']:
-                    buffer += char
-                    i += 1
-                    continue
+                # Determine if this is a grouping paren or part of a tag/value
+                is_tag_paren = False
                 
-                # It's a grouping paren
-                if buffer.strip():
-                    tokens.append(buffer.strip())
-                    buffer = ''
-                paren_depth -= 1
-                tokens.append(')')
+                # Check if we're inside a field value
+                if in_field_value or self._is_field_prefix(query, i + 1):
+                    is_tag_paren = True
+                # Check if followed by alphanumeric or underscore
+                elif i + 1 < len(query) and (query[i + 1].isalnum() or query[i + 1] == '_'):
+                    is_tag_paren = True
+                # Check if we're not at grouping depth
+                elif paren_depth == 0:
+                    is_tag_paren = True
+                
+                if is_tag_paren:
+                    buffer += char
+                else:
+                    # Grouping paren
+                    if buffer.strip():
+                        tokens.append(buffer.strip())
+                        buffer = ''
+                    paren_depth -= 1
+                    tokens.append(')')
                 
             elif (char in ['|', '~', ',']) and paren_depth > 0:
                 if buffer.strip():
@@ -164,9 +223,8 @@ class QueryTranslator:
                         tokens.append(buffer.strip())
                         buffer = ''
                 else:
-                    # Inside parens, check if space should be kept
+                    # Inside parens - preserve or tokenize based on next char
                     if buffer.strip():
-                        # Look ahead for operators
                         next_idx = i + 1
                         while next_idx < len(query) and query[next_idx] == ' ':
                             next_idx += 1
@@ -254,6 +312,28 @@ class QueryTranslator:
         
         return result, i
     
+    def _parse_size_value(self, value_str: str) -> int:
+        """Parse size value with units (e.g., '500kb', '1.5mb') into bytes"""
+        # Match number with optional decimal and unit
+        match = re.match(r'^([\d.]+)\s*([a-zA-Z]*)$', value_str.strip())
+        if not match:
+            raise ValueError(f"Invalid size format: {value_str}")
+        
+        number_str, unit_str = match.groups()
+        try:
+            number = float(number_str)
+        except ValueError:
+            raise ValueError(f"Invalid number in size: {number_str}")
+        
+        # Default to bytes if no unit
+        unit = unit_str.lower() if unit_str else 'b'
+        
+        multiplier = self.SIZE_UNITS.get(unit)
+        if multiplier is None:
+            raise ValueError(f"Unknown size unit: {unit_str}")
+        
+        return int(number * multiplier)
+    
     def _parse_filter_token(self, token: str) -> FilterNode:
         """Parse a single filter token"""
         # Extract negation
@@ -266,7 +346,7 @@ class QueryTranslator:
                 break
         
         # Check for field:value syntax
-        colon_match = re.match(r'^([a-zA-Z_]+):(.+)$', core)
+        colon_match = re.match(r'^([a-zA-Z_-]+):(.+)$', core)
         
         if not colon_match:
             # Plain tag search
@@ -284,8 +364,14 @@ class QueryTranslator:
         # Normalize field name
         field = self.FIELD_ALIASES.get(field, field)
         
-        # Parse numeric fields
-        if field in self.NUMERIC_FIELDS:
+        # Handle special fields
+        if field == 'file_size':
+            return self._parse_size_filter(value, is_negated)
+        elif field == 'duration':
+            return self._parse_duration_filter(value, is_negated)
+        elif field == 'tag_count' or field == 'matching_tags':
+            return self._parse_numeric_filter(field, value, is_negated)
+        elif field in self.NUMERIC_FIELDS:
             return self._parse_numeric_filter(field, value, is_negated)
         
         # Text field
@@ -294,6 +380,51 @@ class QueryTranslator:
             key=field,
             value=value,
             operator='=',
+            is_negated=is_negated
+        )
+    
+    def _parse_size_filter(self, value: str, is_negated: bool) -> FilterNode:
+        """Parse size filter with units"""
+        # Check for operator
+        op_match = re.match(r'^([<>]=?|=)?(.+)$', value)
+        if not op_match:
+            raise ValueError(f"Invalid size filter: {value}")
+        
+        operator = op_match.group(1) or '='
+        size_str = op_match.group(2)
+        
+        # Parse size with units
+        size_bytes = self._parse_size_value(size_str)
+        
+        return FilterNode(
+            type='FILTER',
+            key='file_size',
+            value=size_bytes,
+            operator=operator,
+            is_negated=is_negated
+        )
+    
+    def _parse_duration_filter(self, value: str, is_negated: bool) -> FilterNode:
+        """Parse duration filter (in seconds)"""
+        # Check for operator
+        op_match = re.match(r'^([<>]=?|=)?(.+)$', value)
+        if not op_match:
+            raise ValueError(f"Invalid duration filter: {value}")
+        
+        operator = op_match.group(1) or '='
+        duration_str = op_match.group(2)
+        
+        # Parse duration (assume seconds)
+        try:
+            duration = float(duration_str)
+        except ValueError:
+            raise ValueError(f"Invalid duration number: {duration_str}")
+        
+        return FilterNode(
+            type='FILTER',
+            key='duration',
+            value=duration,
+            operator=operator,
             is_negated=is_negated
         )
     
@@ -354,16 +485,10 @@ class QueryTranslator:
         
         logger.debug(f"Converting filter to SQL: key={key}, value={value}, op={operator}, neg={is_negated}")
         
-        # Tag search - FIXED: Use JSON array search instead of FTS5
+        # Tag search
         if key == 'tag':
-            # Tags are stored as JSON array: ["tag1", "tag2", ...]
-            # We need to search within the JSON array
-            
             if '*' in value:
-                # Wildcard search - use LIKE on JSON representation
                 pattern = value.replace('*', '%')
-                # Search for tag within the JSON array
-                # Format: ["tag1", "searched_tag", "tag3"]
                 search_pattern = f'%"{pattern}"%'
                 
                 if is_negated:
@@ -371,11 +496,8 @@ class QueryTranslator:
                 else:
                     sql = "tags LIKE ?"
                 
-                logger.debug(f"Tag wildcard SQL: {sql} with pattern: {search_pattern}")
                 return sql, [search_pattern]
             else:
-                # Exact tag match within JSON array
-                # Format: ["tag1", "exact_tag", "tag3"]
                 search_pattern = f'%"{value}"%'
                 
                 if is_negated:
@@ -383,39 +505,93 @@ class QueryTranslator:
                 else:
                     sql = "tags LIKE ?"
                 
-                logger.debug(f"Tag exact SQL: {sql} with pattern: {search_pattern}")
                 return sql, [search_pattern]
+        
+        # Tag count (computed from JSON array)
+        if key == 'tag_count':
+            # Calculate tag count from JSON array length
+            if operator == 'pattern':
+                pattern = value.replace('*', '%')
+                if is_negated:
+                    return f"CAST((length(tags) - length(replace(tags, ',', '')) + 1) AS TEXT) NOT LIKE ?", [pattern]
+                else:
+                    return f"CAST((length(tags) - length(replace(tags, ',', '')) + 1) AS TEXT) LIKE ?", [pattern]
+            else:
+                sql_op = operator
+                if is_negated:
+                    op_inverse = {'=': '!=', '>': '<=', '>=': '<', '<': '>=', '<=': '>'}
+                    sql_op = op_inverse.get(operator, '!=')
+                
+                # Count commas + 1 = number of tags (works for ["tag1","tag2"])
+                return f"(length(tags) - length(replace(tags, ',', '')) + 1) {sql_op} ?", [value]
+        
+        # Matching tags (special case - needs to be handled in application layer)
+        # This would require knowing the search query, so we'll add a placeholder
+        if key == 'matching_tags':
+            # This is tricky - we can't compute this in SQL without the search context
+            # For now, we'll return a placeholder that always matches
+            # The application layer would need to handle this
+            logger.warning("matching_tags filter requires application-layer filtering")
+            return "1=1", []
+        
+        # File size
+        if key == 'file_size':
+            if operator == 'pattern':
+                pattern = value.replace('*', '%')
+                if is_negated:
+                    return f"CAST(file_size AS TEXT) NOT LIKE ?", [pattern]
+                else:
+                    return f"CAST(file_size AS TEXT) LIKE ?", [pattern]
+            else:
+                sql_op = operator
+                if is_negated:
+                    op_inverse = {'=': '!=', '>': '<=', '>=': '<', '<': '>=', '<=': '>'}
+                    sql_op = op_inverse.get(operator, '!=')
+                
+                return f"file_size {sql_op} ?", [value]
+        
+        # Duration (filter out NULL values when using duration filter)
+        if key == 'duration':
+            if operator == 'pattern':
+                pattern = value.replace('*', '%')
+                if is_negated:
+                    return f"(duration IS NOT NULL AND CAST(duration AS TEXT) NOT LIKE ?)", [pattern]
+                else:
+                    return f"(duration IS NOT NULL AND CAST(duration AS TEXT) LIKE ?)", [pattern]
+            else:
+                sql_op = operator
+                if is_negated:
+                    op_inverse = {'=': '!=', '>': '<=', '>=': '<', '<': '>=', '<=': '>'}
+                    sql_op = op_inverse.get(operator, '!=')
+                
+                # Only show posts with duration when duration filter is active
+                return f"(duration IS NOT NULL AND duration {sql_op} ?)", [value]
         
         # Numeric fields
         if key in self.NUMERIC_FIELDS:
             if operator == 'pattern':
-                # Wildcard pattern on numeric field
                 pattern = value.replace('*', '%')
                 if is_negated:
                     return f"CAST({key} AS TEXT) NOT LIKE ?", [pattern]
                 else:
                     return f"CAST({key} AS TEXT) LIKE ?", [pattern]
             else:
-                # Numeric comparison
                 sql_op = operator
                 if is_negated:
-                    # Invert operator for negation
                     op_inverse = {'=': '!=', '>': '<=', '>=': '<', '<': '>=', '<=': '>'}
                     sql_op = op_inverse.get(operator, '!=')
                 
                 return f"{key} {sql_op} ?", [value]
         
-        # Text fields (owner, title, rating, file_type)
+        # Text fields
         if key in self.TEXT_FIELDS:
             if '*' in value:
-                # Wildcard - convert to LIKE
                 pattern = value.replace('*', '%')
                 if is_negated:
                     return f"{key} NOT LIKE ?", [pattern]
                 else:
                     return f"{key} LIKE ?", [pattern]
             else:
-                # Exact match (case-insensitive)
                 if is_negated:
                     return f"LOWER({key}) != LOWER(?)", [value]
                 else:

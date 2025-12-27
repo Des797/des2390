@@ -61,7 +61,8 @@ def init_schema(core):
                 file_path TEXT,
                 downloaded_at TEXT,
                 created_at TEXT,
-                duration REAL
+                duration REAL,
+                file_size INTEGER
             )""")
             
             c.execute("""CREATE VIRTUAL TABLE IF NOT EXISTS post_search_fts 
@@ -90,6 +91,14 @@ def init_schema(core):
                 logger.info("Adding duration column to post_cache table...")
                 c.execute("ALTER TABLE post_cache ADD COLUMN duration REAL")
                 logger.info("Duration column added successfully")
+            
+            # Add file_size column if it doesn't exist (migration)
+            try:
+                c.execute("SELECT file_size FROM post_cache LIMIT 1")
+            except sqlite3.OperationalError:
+                logger.info("Adding file_size column to post_cache table...")
+                c.execute("ALTER TABLE post_cache ADD COLUMN file_size INTEGER")
+                logger.info("File_size column added successfully")
 
             # ---- INDEXES ----
             indexes = [
@@ -111,6 +120,8 @@ def init_schema(core):
                 "CREATE INDEX IF NOT EXISTS idx_title_text ON post_cache(title COLLATE NOCASE)",
                 "CREATE INDEX IF NOT EXISTS idx_created_at ON post_cache(created_at DESC)",
                 "CREATE INDEX IF NOT EXISTS idx_downloaded_at ON post_cache(downloaded_at DESC)",
+                "CREATE INDEX IF NOT EXISTS idx_duration ON post_cache(duration)",
+                "CREATE INDEX IF NOT EXISTS idx_file_size ON post_cache(file_size DESC)",
             ]
 
             for idx_query in indexes:
