@@ -130,7 +130,7 @@ def create_post_routes(app, config, services, login_required):
     @login_required
     def get_posts_paginated():
         """
-        OPTIMIZED: Server-side pagination WITH sorting, search, and RANDOM support
+        ENHANCED: Server-side pagination WITH sorting, search, RANDOM, and METADATA support
         
         Query params:
             - filter: 'all', 'pending', 'saved'
@@ -141,6 +141,8 @@ def create_post_routes(app, config, services, login_required):
             - search: text search query (searches owner, title, tags)
             - random_seed: seed for random sort (optional, maintains order across pages)
         
+        Search query can include sort: and per-page: which override URL params
+        
         Returns:
             {
                 'posts': [...],
@@ -149,7 +151,8 @@ def create_post_routes(app, config, services, login_required):
                 'offset': offset,
                 'sort': sort,
                 'order': order,
-                'random_seed': seed (if random sort)
+                'random_seed': seed (if random sort),
+                'per_page': per_page (if overridden by query)
             }
         """
         try:
@@ -184,7 +187,7 @@ def create_post_routes(app, config, services, login_required):
                 'id': 'post_id',
                 'tags': 'tags',
                 'size': 'timestamp',
-                'random': 'random'  # Special handling
+                'random': 'random'
             }
             sort_by = sort_mapping.get(sort_by, sort_by)
             
@@ -194,6 +197,7 @@ def create_post_routes(app, config, services, login_required):
             )
             
             # Call service with random_seed
+            # Service will handle metadata extraction from search_query
             result = post_service.get_posts(
                 filter_type=filter_type,
                 limit=limit,

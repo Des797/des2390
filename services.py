@@ -1,6 +1,7 @@
-"""Business logic layer - OPTIMIZED with server-side advanced query parsing"""
+"""Business logic layer - Enhanced with metadata and matching-tags backend"""
 import logging
 import random
+import re
 from typing import Dict, List, Any, Optional
 from exceptions import PostNotFoundError, ValidationError, StorageError
 from validators import (
@@ -35,11 +36,151 @@ class PostService:
                 logger.error(f"Failed to initialize cache: {e}", exc_info=True)
                 raise
     
+    def _extract_search_tags(self, search_query: str) -> List[str]:
+        """
+        Extract tag filters from search query for matching-tags calculation
+        
+        Examples:
+        - "(cat | dog) -frog" → ['cat', 'dog']
+        - "red blue -green" → ['red', 'blue']
+        - "owner:alice red" → ['red']
+        """
+        if not search_query:
+            return []
+        
+        tags = []
+        
+        # Remove field: filters (owner:, type:, etc)
+        clean_query = re.sub(r'\b\w+:[^\s]+', '', search_query)
+        
+        # Remove negations
+        clean_query = re.sub(r'[-!]\S+', '', clean_query)
+        clean_query = re.sub(r'\b(exclude|remove|negate|not):\S+', '', clean_query)
+        
+        # Remove parentheses and OR operators
+        clean_query = clean_query.replace('(', ' ').replace(')', ' ')
+        clean_query = clean_query.replace('|', ' ').replace('~', ' ').replace(',', ' ')
+        
+        # Split into tokens
+        tokens = clean_query.split()
+        
+        for token in tokens:
+            token = token.strip()
+            if token and not token.startswith('-') and not token.startswith('!'):
+                tags.append(token.lower())
+        
+        return tags
+    
+    def _count_matching_tags(self, post: Dict, search_tags: List[str]) -> int:
+        """
+        Count how many search tags a post matches
+        
+        Args:
+            post: Post dict with 'tags' field
+            search_tags: List of tags from search query
+        
+        Returns:
+            Number of matching tags
+        """
+        if not search_tags:
+            return 0
+        
+        post_tags = [t.lower() for t in post.get('tags', [])]
+        match_count = 0
+        
+        for search_tag in search_tags:
+            # Handle wildcards
+            if '*' in search_tag:
+                pattern = search_tag.replace('*', '.*')
+                regex = re.compile(f'^{pattern}$', re.IGNORECASE)
+                if any(regex.match(pt) for pt in post_tags):
+                    match_count += 1
+            else:
+                # Exact match
+                if search_tag in post_tags:
+                    match_count += 1
+        
+        return match_count
+    
+    def _apply_matching_tags_filter(
+        self, 
+        posts: List[Dict], 
+        search_query: str,
+        operator: str,
+        threshold: int,
+        is_negated: bool
+    ) -> List[Dict]:
+        """
+        Apply matching-tags filter in application layer
+        
+        Args:
+            posts: List of posts to filter
+            search_query: Original search query
+            operator: Comparison operator
+            threshold: Threshold value
+            is_negated: Whether filter is negated
+        
+        Returns:
+            Filtered posts with match_count added
+        """
+        # Extract search tags
+        search_tags = self._extract_search_tags(search_query)
+        
+        if not search_tags:
+            logger.warning("No search tags found for matching-tags filter")
+            return posts
+        
+        logger.info(f"Applying matching-tags filter: tags={search_tags}, op={operator}, threshold={threshold}")
+        
+        filtered = []
+        for post in posts:
+            match_count = self._count_matching_tags(post, search_tags)
+            
+            # Apply operator
+            matches = False
+            if operator == '>': matches = match_count > threshold
+            elif operator == '>=': matches = match_count >= threshold
+            elif operator == '<': matches = match_count < threshold
+            elif operator == '<=': matches = match_count <= threshold
+            elif operator == '=': matches = match_count == threshold
+            
+            if is_negated:
+                matches = not matches
+            
+            if matches:
+                post['_match_count'] = match_count
+                filtered.append(post)
+        
+        logger.info(f"Matching-tags filter: {len(filtered)}/{len(posts)} posts matched")
+        return filtered
+    
+    def _check_for_matching_tags_filter(self, search_query: str) -> Optional[tuple]:
+        """
+        Check if search query contains matching-tags filter
+        
+        Returns:
+            (operator, threshold, is_negated) or None
+        """
+        if not search_query:
+            return None
+        
+        # Look for matching-tags: pattern
+        pattern = r'([-!])?(matching-tags|matchingtags|matches):([<>]=?|=)?(\d+)'
+        match = re.search(pattern, search_query, re.IGNORECASE)
+        
+        if not match:
+            return None
+        
+        is_negated = match.group(1) is not None
+        operator = match.group(3) or '='
+        threshold = int(match.group(4))
+        
+        return (operator, threshold, is_negated)
 
     def get_posts(
         self, 
         filter_type: str = 'all', 
-        limit: int = 100000, 
+        limit: int = 1000000, 
         offset: int = 0,
         sort_by: str = 'timestamp',
         order: str = 'DESC',
@@ -48,55 +189,56 @@ class PostService:
     ) -> Dict[str, Any]:
         """
         Get posts with SERVER-SIDE pagination, sorting, and filtering
-        
-        Args:
-            filter_type: 'all', 'pending', 'saved'
-            limit: Number of posts per page
-            offset: Starting position
-            sort_by: Sort column (timestamp, score, id, owner, etc.) or 'random'
-            order: 'ASC' or 'DESC'
-            search_query: Text search (searches owner, title, tags)
-            random_seed: Seed for random sort (maintains order across pagination)
-        
-        Returns: {
-            'posts': [...],
-            'total': count (with filters applied),
-            'limit': limit,
-            'offset': offset,
-            'random_seed': seed used (if random sort)
-        }
+        ENHANCED: Applies matching-tags filter in application layer
         """
         filter_type = validate_filter_type(filter_type)
         
-        # Ensure cache is ready
         self._ensure_cache_initialized()
         
-        # Get total count WITH filters
-        status = None if filter_type == 'all' else filter_type
-        total = self.database.get_cache_count(status=status, search_query=search_query)
+        # Parse query to get metadata
+        from query_translator import get_query_translator
+        translator = get_query_translator()
         
-        # Handle random sort
+        # Translate query
+        status = None if filter_type == 'all' else filter_type
+        sql, params, metadata = translator.translate(search_query if search_query else "", status)
+        
+        # Override sort/order if metadata specifies
+        if metadata.sort_by:
+            sort_by = metadata.sort_by
+        if metadata.sort_order:
+            order = metadata.sort_order.upper()
+        
+        # Check for matching-tags filter
+        matching_tags_filter = self._check_for_matching_tags_filter(search_query) if search_query else None
+        
+        # Get posts from database
         if sort_by == 'random':
-            # Generate or reuse seed
             if random_seed is None:
                 random_seed = random.randint(0, 2**31 - 1)
             
-            # Get ALL matching posts
+            # Get all matching posts for shuffling
+            total = self.database.get_cache_count(status=status, search_query=search_query)
+            
             all_posts = self.database.get_cached_posts(
                 status=status,
-                limit=total,  # Get all matching posts
+                limit=total,
                 offset=0,
-                sort_by='post_id',  # Stable sort for consistency
+                sort_by='post_id',
                 order='ASC',
                 search_query=search_query
             )
             
-            # Shuffle with seed for consistency
+            # Apply matching-tags filter BEFORE shuffling
+            if matching_tags_filter:
+                op, thresh, neg = matching_tags_filter
+                all_posts = self._apply_matching_tags_filter(all_posts, search_query, op, thresh, neg)
+                total = len(all_posts)
+            
             random.seed(random_seed)
             random.shuffle(all_posts)
-            random.seed()  # Reset seed
+            random.seed()
             
-            # Apply pagination to shuffled results
             posts = all_posts[offset:offset + limit]
             
             logger.info(f"Random sort: shuffled {len(all_posts)} posts, returning {len(posts)} (seed={random_seed})")
@@ -110,16 +252,42 @@ class PostService:
             }
         
         # Normal server-side sort
-        posts = self.database.get_cached_posts(
-            status=status,
-            limit=limit,
-            offset=offset,
-            sort_by=sort_by,
-            order=order,
-            search_query=search_query
-        )
-        
-        logger.info(f"Retrieved {len(posts)} posts (offset={offset}, total={total}, sort={sort_by} {order})")
+        if matching_tags_filter:
+            # Need to get ALL posts first, then filter, then paginate
+            total_before_filter = self.database.get_cache_count(status=status, search_query=search_query)
+            
+            all_posts = self.database.get_cached_posts(
+                status=status,
+                limit=total_before_filter,
+                offset=0,
+                sort_by=sort_by,
+                order=order,
+                search_query=search_query
+            )
+            
+            # Apply matching-tags filter
+            op, thresh, neg = matching_tags_filter
+            filtered_posts = self._apply_matching_tags_filter(all_posts, search_query, op, thresh, neg)
+            
+            # Paginate filtered results
+            total = len(filtered_posts)
+            posts = filtered_posts[offset:offset + limit]
+            
+            logger.info(f"With matching-tags filter: {len(posts)} posts returned from {total} matches")
+        else:
+            # No matching-tags filter - use normal database pagination
+            total = self.database.get_cache_count(status=status, search_query=search_query)
+            
+            posts = self.database.get_cached_posts(
+                status=status,
+                limit=limit,
+                offset=offset,
+                sort_by=sort_by,
+                order=order,
+                search_query=search_query
+            )
+            
+            logger.info(f"Retrieved {len(posts)} posts (offset={offset}, total={total})")
         
         return {
             'posts': posts,
@@ -131,13 +299,33 @@ class PostService:
     def get_total_count(self, filter_type: str = 'all', search_query: Optional[str] = None) -> int:
         """
         Get total count with optional search filter
+        ENHANCED: Accounts for matching-tags filter
         """
         try:
             filter_type = validate_filter_type(filter_type)
             self._ensure_cache_initialized()
             
             status = None if filter_type == 'all' else filter_type
-            return self.database.get_cache_count(status=status, search_query=search_query)
+            
+            # Check for matching-tags filter
+            matching_tags_filter = self._check_for_matching_tags_filter(search_query) if search_query else None
+            
+            if matching_tags_filter:
+                # Need to apply filter to get accurate count
+                all_posts = self.database.get_cached_posts(
+                    status=status,
+                    limit=1000000,
+                    offset=0,
+                    search_query=search_query
+                )
+                
+                op, thresh, neg = matching_tags_filter
+                filtered_posts = self._apply_matching_tags_filter(all_posts, search_query, op, thresh, neg)
+                
+                return len(filtered_posts)
+            else:
+                # No matching-tags filter - use database count
+                return self.database.get_cache_count(status=status, search_query=search_query)
         except Exception as e:
             logger.error(f"Failed to get total count: {e}", exc_info=True)
             return 0
@@ -213,38 +401,25 @@ class PostService:
         return success
 
     def get_top_tags(self, filter_type: str = 'all', search_query: Optional[str] = None, limit: int = 50) -> List[Dict[str, Any]]:
-        """
-        Get most common tags in current search results
-        
-        Args:
-            filter_type: Status filter
-            search_query: Advanced query string
-            limit: Max number of tags to return
-        
-        Returns:
-            List of {tag: str, count: int} sorted by frequency
-        """
+        """Get most common tags in current search results"""
         try:
             from collections import Counter
             
             self._ensure_cache_initialized()
             
-            # Get all matching posts
             status = None if filter_type == 'all' else filter_type
             posts = self.database.get_cached_posts(
                 status=status,
-                limit=100000,  # Get all matching posts
+                limit=1000000,
                 offset=0,
                 search_query=search_query
             )
             
-            # Count tag frequencies
             tag_counter = Counter()
             for post in posts:
                 for tag in post.get('tags', []):
                     tag_counter[tag] += 1
             
-            # Return top tags
             top_tags = [
                 {'tag': tag, 'count': count}
                 for tag, count in tag_counter.most_common(limit)
@@ -262,20 +437,17 @@ class PostService:
         return self.file_manager.get_file_size(post_id)
     
     def rebuild_cache(self) -> bool:
-        """
-        Rebuild post cache from files
-        Updates service state properly
-        """
+        """Rebuild post cache from files"""
         try:
             success = self.database.rebuild_cache_from_files(self.file_manager)
             if success:
-                # Reset cache flag so it's considered initialized
                 self._cache_initialized = True
                 logger.info("Cache rebuilt successfully through service")
             return success
         except Exception as e:
             logger.error(f"Cache rebuild failed: {e}", exc_info=True)
             return False
+
 
 class ConfigService:
     """Service for configuration operations"""
@@ -300,23 +472,19 @@ class ConfigService:
         """Save configuration"""
         import json
         
-        # Save API credentials
         if "api_user_id" in config:
             self.database.save_config("api_user_id", config["api_user_id"])
         if "api_key" in config:
             self.database.save_config("api_key", config["api_key"])
         
-        # Save paths
         if "temp_path" in config:
             self.database.save_config("temp_path", config["temp_path"])
         if "save_path" in config:
             self.database.save_config("save_path", config["save_path"])
         
-        # Save blacklist
         if "blacklist" in config:
             self.database.save_config("blacklist", json.dumps(config["blacklist"]))
         
-        # Update modules with new config
         self.api_client.update_credentials(
             config.get("api_user_id", self.api_client.user_id),
             config.get("api_key", self.api_client.api_key)
@@ -405,7 +573,6 @@ class ScraperService:
         """Start the scraper"""
         tags = validate_tags(tags) if tags else ""
         
-        # Check for resume opportunity if not explicitly resuming
         if not resume and tags:
             resume_page = self.scraper.check_resume_available(tags)
             if resume_page and resume_page > 0:

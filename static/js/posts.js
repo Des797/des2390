@@ -14,8 +14,93 @@ import {
 import { renderPost, renderPaginationButtons, setupVideoPreviewListeners } from './posts_renderer.js';
 import { attachPostEventListeners, setupPaginationListeners, setupMediaErrorHandlers } from './event_handlers.js';
 import { ELEMENT_IDS, URL_PARAMS, POST_STATUS, CSS_CLASSES, SORT_ORDER } from './constants.js';
+import { extractMetadata, validateQuery } from './query_parser.js';
 
 window.setupVideoPreviewListeners = setupVideoPreviewListeners;
+
+/**
+ * Handle query metadata (sort:, per-page:) before loading posts
+ * Call this at the start of loadPosts()
+ */
+export function handleQueryMetadata(searchQuery) {
+    if (!searchQuery) return;
+    
+    // Validate query syntax first
+    const error = validateQuery(searchQuery);
+    if (error) {
+        showNotification(`Query error: ${error}`, 'error');
+        return;
+    }
+    
+    // Extract metadata
+    const metadata = extractMetadata(searchQuery);
+    
+    // Update sort dropdown if sort: was used
+    if (metadata.sort) {
+        const sortDropdown = document.getElementById('postsSort');
+        if (sortDropdown) {
+            // Map sort fields to dropdown values
+            const sortMapping = {
+                'download': 'download',
+                'download-date': 'download',
+                'downloaded': 'download',
+                'upload': 'upload',
+                'upload-date': 'upload',
+                'uploaded': 'upload',
+                'created': 'upload',
+                'id': 'id',
+                'post-id': 'id',
+                'score': 'score',
+                'tags': 'tags',
+                'tag-count': 'tags',
+                'size': 'size',
+                'file-size': 'size',
+                'width': 'size',
+                'height': 'size',
+                'duration': 'size',
+                'random': 'random'
+            };
+            
+            const mappedSort = sortMapping[metadata.sort.toLowerCase()] || metadata.sort;
+            
+            // Update dropdown if value exists
+            const option = Array.from(sortDropdown.options).find(
+                opt => opt.value === mappedSort
+            );
+            
+            if (option) {
+                sortDropdown.value = mappedSort;
+                console.log(`[Metadata] Updated sort dropdown to: ${mappedSort}`);
+            }
+        }
+    }
+    
+    // Update sort order if specified
+    if (metadata.order) {
+        const orderBtn = document.getElementById('postsSortOrder');
+        if (orderBtn) {
+            const newOrder = metadata.order.toUpperCase();
+            if (state.postsSortOrder !== newOrder) {
+                state.postsSortOrder = newOrder;
+                orderBtn.textContent = newOrder === 'ASC' ? '↑' : '↓';
+                orderBtn.title = newOrder === 'ASC' ? 'Ascending' : 'Descending';
+                console.log(`[Metadata] Updated sort order to: ${newOrder}`);
+            }
+        }
+    }
+    
+    // Update per-page if specified
+    if (metadata.perPage) {
+        const perPageInput = document.getElementById('postsPerPage');
+        if (perPageInput) {
+            const clamped = Math.max(1, Math.min(metadata.perPage, 200));
+            if (parseInt(perPageInput.value) !== clamped) {
+                perPageInput.value = clamped;
+                console.log(`[Metadata] Updated per-page to: ${clamped}`);
+            }
+        }
+    }
+}
 
 // Modal index cache
 let modalIndexCache = new Map();
@@ -171,6 +256,7 @@ async function renderPostsOptimized(grid, posts, sortBy, searchQuery) {
  */
 async function loadPosts(updateURL = true) {
     console.log('🎬 loadPosts() - SERVER-SIDE sorting & searching');
+    handleQueryMetadata(state.postsSearch);
     
     const grid = document.getElementById(ELEMENT_IDS.POSTS_GRID);
     const startTime = Date.now();
@@ -750,6 +836,53 @@ function renderPagination(total, perPage, currentPage) {
     }
 }
 
+/**
+ * Show metadata indicators in UI (optional enhancement)
+ */
+export function showMetadataIndicators(searchQuery) {
+    const metadata = extractMetadata(searchQuery);
+    const searchInput = document.getElementById('postsSearchInput');
+    
+    if (!searchInput) return;
+    
+    // Remove existing indicators
+    const existingIndicator = document.querySelector('.metadata-indicator');
+    if (existingIndicator) {
+        existingIndicator.remove();
+    }
+    
+    // Create indicator if metadata present
+    if (metadata.sort || metadata.perPage) {
+        const indicator = document.createElement('div');
+        indicator.className = 'metadata-indicator';
+        
+        const parts = [];
+        if (metadata.sort) {
+            const orderIcon = metadata.order === 'asc' ? '↑' : metadata.order === 'desc' ? '↓' : '';
+            parts.push(`Sort: ${metadata.sort}${orderIcon}`);
+        }
+        if (metadata.perPage) {
+            parts.push(`${metadata.perPage}/page`);
+        }
+        
+        indicator.innerHTML = `<small>🔧 ${parts.join(' • ')}</small>`;
+        indicator.style.cssText = `
+            position: absolute;
+            bottom: -20px;
+            left: 0;
+            font-size: 11px;
+            color: var(--accent);
+            background: var(--bg-main);
+            padding: 2px 8px;
+            border-radius: 4px;
+            border: 1px solid var(--border-main);
+        `;
+        
+        searchInput.parentElement.style.position = 'relative';
+        searchInput.parentElement.appendChild(indicator);
+    }
+}
+
 function refreshCurrentPage() {
     loadPosts(false);
 }
@@ -757,6 +890,8 @@ function refreshCurrentPage() {
 window.refreshCurrentPage = refreshCurrentPage;
 
 export {
+    handleQueryMetadata,
+    showMetadataIndicators,
     loadPosts,
     clearSelection,
     selectAllOnPage,

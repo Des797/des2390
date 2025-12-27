@@ -1,7 +1,7 @@
-// Complete Query Parser - FIXED for tags with parentheses
-// ADDED: Tag-Count:, Duration:, Size:, Matching-Tags: operators
+// Simplified Query Parser - Frontend handles UI hints, backend does heavy lifting
+// Only essential client-side features: tag highlighting, basic validation
 
-// Size units for conversion to bytes
+// Size units for UI display
 const SIZE_UNITS = {
     'b': 1,
     'byte': 1, 'bytes': 1,
@@ -11,505 +11,220 @@ const SIZE_UNITS = {
     'tb': 1024**4, 'terabyte': 1024**4, 'terabytes': 1024**4
 };
 
-function isFieldPrefix(text, pos) {
-    if (pos === 0) return false;
+/**
+ * Extract tag filters from query for client-side highlighting
+ * Backend does the real parsing
+ */
+function extractSearchTags(query) {
+    if (!query) return [];
     
-    const checkStart = Math.max(0, pos - 50);
-    const substring = text.substring(checkStart, pos);
+    const tags = [];
     
-    // Check if we have field: pattern right before this position
-    const fieldPattern = /(\w+):([^\s]*?)$/;
-    const match = substring.match(fieldPattern);
+    // Remove field: filters
+    let clean = query.replace(/\b\w+:[^\s]+/g, '');
     
-    return match !== null;
+    // Remove negations
+    clean = clean.replace(/[-!]\S+/g, '');
+    
+    // Remove parens and OR operators
+    clean = clean.replace(/[()]/g, ' ').replace(/[|~,]/g, ' ');
+    
+    // Split and filter
+    const tokens = clean.split(/\s+/).filter(t => t && !t.startsWith('-') && !t.startsWith('!'));
+    
+    return tokens.map(t => t.toLowerCase());
 }
 
-function tokenize(query) {
-    const tokens = [];
-    let buffer = '';
+/**
+ * Check if query has sort: or per-page: operators
+ * Used to update UI state
+ */
+function extractMetadata(query) {
+    const metadata = {
+        sort: null,
+        order: null,
+        perPage: null
+    };
+    
+    if (!query) return metadata;
+    
+    // Extract sort:
+    const sortMatch = query.match(/\bsort:([^\s]+)/i);
+    if (sortMatch) {
+        const sortValue = sortMatch[1];
+        
+        // Parse sort value
+        let field = sortValue;
+        let order = null;
+        
+        // Direction indicators
+        if (field.endsWith('>')) {
+            field = field.slice(0, -1);
+            order = 'asc';
+        } else if (field.startsWith('>')) {
+            field = field.slice(1);
+            order = 'desc';
+        } else if (field.endsWith('<')) {
+            field = field.slice(0, -1);
+            order = 'desc';
+        } else if (field.startsWith('<')) {
+            field = field.slice(1);
+            order = 'asc';
+        } else if (field.endsWith('-desc') || field.endsWith('_desc')) {
+            field = field.slice(0, -5);
+            order = 'desc';
+        } else if (field.endsWith('-asc') || field.endsWith('_asc')) {
+            field = field.slice(0, -4);
+            order = 'asc';
+        }
+        
+        // Remove quotes
+        field = field.replace(/["']/g, '');
+        
+        metadata.sort = field;
+        metadata.order = order;
+    }
+    
+    // Extract per-page:
+    const perPageMatch = query.match(/\bper-page:(\d+)/i);
+    if (perPageMatch) {
+        metadata.perPage = parseInt(perPageMatch[1]);
+    }
+    
+    return metadata;
+}
+
+/**
+ * Simple wildcard matching for client-side tag highlighting
+ */
+function matchesWildcard(text, pattern) {
+    if (!text || !pattern) return false;
+    
+    if (!pattern.includes('*')) {
+        return text.toLowerCase() === pattern.toLowerCase();
+    }
+    
+    const regex = new RegExp(
+        '^' + pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\*/g, '.*') + '$',
+        'i'
+    );
+    
+    return regex.test(text);
+}
+
+/**
+ * Count how many search tags a post matches (for client-side display)
+ */
+function countMatchingTags(post, searchQuery) {
+    if (!searchQuery || !post.tags) return 0;
+    
+    const searchTags = extractSearchTags(searchQuery);
+    if (searchTags.length === 0) return 0;
+    
+    const postTags = post.tags.map(t => t.toLowerCase());
+    let count = 0;
+    
+    for (const searchTag of searchTags) {
+        if (searchTag.includes('*')) {
+            if (postTags.some(pt => matchesWildcard(pt, searchTag))) {
+                count++;
+            }
+        } else {
+            if (postTags.includes(searchTag)) {
+                count++;
+            }
+        }
+    }
+    
+    return count;
+}
+
+/**
+ * Highlight matching tags in post for UI
+ * Backend filters, frontend just highlights
+ */
+export function highlightMatchingTags(posts, searchQuery) {
+    if (!searchQuery) return posts;
+    
+    const searchTags = extractSearchTags(searchQuery);
+    if (searchTags.length === 0) return posts;
+    
+    posts.forEach(post => {
+        post.matchingTags = [];
+        post.matchScore = 0;
+        
+        if (!post.tags) return;
+        
+        const postTags = post.tags.map(t => t.toLowerCase());
+        
+        post.tags.forEach((tag, idx) => {
+            for (const searchTag of searchTags) {
+                if (matchesWildcard(postTags[idx], searchTag)) {
+                    post.matchingTags.push(tag);
+                    post.matchScore++;
+                    break;
+                }
+            }
+        });
+    });
+    
+    return posts;
+}
+
+/**
+ * Validate query syntax (basic check)
+ * Returns error message or null if valid
+ */
+export function validateQuery(query) {
+    if (!query || !query.trim()) return null;
+    
+    // Check for unmatched parentheses
     let parenDepth = 0;
-    let inFieldValue = false;
-    const len = query.length;
-    
-    for (let i = 0; i < len; i++) {
-        const char = query[i];
-        
-        // Check if we're starting a field value
-        if (char === ':' && buffer && /\w$/.test(buffer)) {
-            buffer += char;
-            inFieldValue = true;
-            continue;
-        }
-        
-        // Reset field value flag on whitespace at depth 0
-        if (char === ' ' && parenDepth === 0) {
-            inFieldValue = false;
-        }
-        
-        if (char === '(') {
-            let isTagParen = false;
-            
-            // Check if we're inside a field value
-            if (inFieldValue || isFieldPrefix(query, i)) {
-                isTagParen = true;
-            }
-            // Check if preceded by alphanumeric or underscore
-            else if (buffer && /[\w_]$/.test(buffer)) {
-                isTagParen = true;
-            }
-            
-            if (isTagParen) {
-                buffer += char;
-            } else {
-                // Grouping paren
-                if (buffer.trim() && parenDepth === 0) {
-                    tokens.push(buffer.trim());
-                    buffer = '';
-                }
-                parenDepth++;
-                tokens.push('(');
-            }
-        } else if (char === ')') {
-            let isTagParen = false;
-            
-            // Check if we're inside a field value
-            if (inFieldValue || isFieldPrefix(query, i + 1)) {
-                isTagParen = true;
-            }
-            // Check if followed by alphanumeric or underscore
-            else if (i + 1 < len && /[\w_]/.test(query[i + 1])) {
-                isTagParen = true;
-            }
-            // Check if we're not at grouping depth
-            else if (parenDepth === 0) {
-                isTagParen = true;
-            }
-            
-            if (isTagParen) {
-                buffer += char;
-            } else {
-                // Grouping paren
-                if (buffer.trim()) {
-                    tokens.push(buffer.trim());
-                    buffer = '';
-                }
-                parenDepth--;
-                tokens.push(')');
-            }
-        } else if ((char === '|' || char === '~' || char === ',') && parenDepth > 0) {
-            if (buffer.trim()) {
-                tokens.push(buffer.trim());
-                buffer = '';
-            }
-            tokens.push('|');
-        } else if (char === ' ') {
-            if (parenDepth === 0) {
-                if (buffer.trim()) {
-                    tokens.push(buffer.trim());
-                    buffer = '';
-                }
-            } else if (buffer.trim()) {
-                let nextIdx = i + 1;
-                while (nextIdx < len && query[nextIdx] === ' ') nextIdx++;
-                
-                if (nextIdx < len) {
-                    const nextChar = query[nextIdx];
-                    if (['|', '~', ',', ')', '('].includes(nextChar)) {
-                        tokens.push(buffer.trim());
-                        buffer = '';
-                    } else {
-                        buffer += char;
-                    }
-                } else {
-                    buffer += char;
-                }
-            }
-        } else {
-            buffer += char;
+    for (const char of query) {
+        if (char === '(') parenDepth++;
+        if (char === ')') parenDepth--;
+        if (parenDepth < 0) {
+            return 'Unmatched closing parenthesis';
         }
     }
-    
-    if (buffer.trim()) {
-        tokens.push(buffer.trim());
-    }
-    
     if (parenDepth > 0) {
-        throw new Error(`Unclosed parenthesis (missing ${parenDepth} closing parenthesis)`);
+        return `Unclosed parenthesis (missing ${parenDepth} closing)`;
     }
     
-    return tokens;
+    return null;
 }
 
-function extractNegation(token) {
-    const exclusionPrefixes = ['-', '!', 'exclude:', 'remove:', 'negate:', 'not:'];
+/**
+ * Parse size value for display (no validation, backend handles that)
+ */
+export function parseSizeDisplay(sizeStr) {
+    const match = sizeStr.match(/^([\d.]+)\s*([a-zA-Z]*)$/);
+    if (!match) return sizeStr;
     
-    for (const prefix of exclusionPrefixes) {
-        if (token.startsWith(prefix)) {
-            return {
-                isNeg: true,
-                core: token.substring(prefix.length)
-            };
-        }
-    }
+    const [, num, unit] = match;
+    const unitLower = unit ? unit.toLowerCase() : 'b';
+    const multiplier = SIZE_UNITS[unitLower] || 1;
     
-    return { isNeg: false, core: token };
+    return `${num} ${unit || 'B'} (${(parseFloat(num) * multiplier).toLocaleString()} bytes)`;
 }
 
-function normalizeFieldName(field) {
-    const normalized = field.toLowerCase();
-    
-    if (['type', 'file_type', 'ext', 'extension', 'filetype'].includes(normalized)) {
-        return 'file_type';
-    }
-    if (['user', 'creator', 'author'].includes(normalized)) {
-        return 'owner';
-    }
-    if (['tag-count', 'tagcount', 'tags'].includes(normalized)) {
-        return 'tag_count';
-    }
-    if (['size', 'filesize', 'file_size'].includes(normalized)) {
-        return 'file_size';
-    }
-    if (['matching-tags', 'matchingtags', 'matches'].includes(normalized)) {
-        return 'matching_tags';
-    }
-    
-    return normalized;
+/**
+ * Format duration for display
+ */
+export function formatDuration(seconds) {
+    if (!seconds || seconds <= 0) return '';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
-function createWildcardRegex(pattern) {
-    const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
-    const regexPattern = escaped.replace(/\*/g, '.*');
-    return new RegExp(`^${regexPattern}$`, 'i');
-}
-
-function parseSizeValue(valueStr) {
-    // Match number with optional decimal and unit
-    const match = valueStr.trim().match(/^([\d.]+)\s*([a-zA-Z]*)$/);
-    if (!match) {
-        throw new Error(`Invalid size format: ${valueStr}`);
-    }
-    
-    const [, numberStr, unitStr] = match;
-    const number = parseFloat(numberStr);
-    
-    if (isNaN(number)) {
-        throw new Error(`Invalid number in size: ${numberStr}`);
-    }
-    
-    // Default to bytes if no unit
-    const unit = unitStr ? unitStr.toLowerCase() : 'b';
-    
-    const multiplier = SIZE_UNITS[unit];
-    if (multiplier === undefined) {
-        throw new Error(`Unknown size unit: ${unitStr}`);
-    }
-    
-    return Math.floor(number * multiplier);
-}
-
-function parseNumericFilter(field, value, isNeg) {
-    const operatorMatch = value.match(/^([<>]=?|=)?(.+)$/);
-    
-    if (!operatorMatch) {
-        throw new Error(`Invalid ${field} filter: ${value}`);
-    }
-    
-    const operator = operatorMatch[1] || '=';
-    const numPart = operatorMatch[2];
-    
-    if (numPart.includes('*')) {
-        return {
-            type: 'FILTER',
-            key: field,
-            value: numPart,
-            isNeg,
-            operator: 'pattern',
-            regex: createWildcardRegex(numPart)
-        };
-    }
-    
-    let numValue;
-    
-    // Special handling for size (with units)
-    if (field === 'file_size') {
-        numValue = parseSizeValue(numPart);
-    } else {
-        numValue = parseFloat(numPart);
-        if (isNaN(numValue)) {
-            throw new Error(`Invalid number in ${field} filter: ${numPart}`);
-        }
-    }
-    
-    return {
-        type: 'FILTER',
-        key: field,
-        value: numValue,
-        isNeg,
-        operator,
-        regex: null
-    };
-}
-
-function createFilter(key, value, isNeg) {
-    const hasWildcard = value.includes('*');
-    
-    return {
-        type: 'FILTER',
-        key,
-        value,
-        isNeg,
-        operator: '=',
-        regex: hasWildcard ? createWildcardRegex(value) : null
-    };
-}
-
-function parseFilterToken(token) {
-    const { isNeg, core } = extractNegation(token);
-    
-    const colonMatch = core.match(/^([a-zA-Z_-]+):(.+)$/);
-    
-    if (!colonMatch) {
-        return createFilter('tag', core, isNeg);
-    }
-    
-    const field = normalizeFieldName(colonMatch[1]);
-    const value = colonMatch[2];
-    
-    // Numeric fields (including new ones)
-    if (['score', 'width', 'height', 'tag_count', 'file_size', 'duration', 'matching_tags'].includes(field)) {
-        return parseNumericFilter(field, value, isNeg);
-    }
-    
-    return createFilter(field, value, isNeg);
-}
-
-function parseTokens(tokens, startIndex = 0, depth = 0) {
-    const andGroup = [];
-    let i = startIndex;
-    
-    while (i < tokens.length) {
-        const token = tokens[i];
-        
-        if (token === '(') {
-            const { node, newIndex } = parseTokens(tokens, i + 1, depth + 1);
-            andGroup.push(node);
-            i = newIndex;
-        } else if (token === ')') {
-            if (depth === 0) {
-                throw new Error('Unexpected closing parenthesis');
-            }
-            i++;
-            break;
-        } else if (token === '|') {
-            i++;
-        } else {
-            try {
-                const filter = parseFilterToken(token);
-                
-                if (i + 1 < tokens.length && tokens[i + 1] === '|') {
-                    const orGroup = [filter];
-                    i++;
-                    
-                    while (i < tokens.length) {
-                        if (tokens[i] === '|') {
-                            i++;
-                            continue;
-                        }
-                        
-                        if (tokens[i] === ')' && depth > 0) {
-                            break;
-                        }
-                        
-                        if (tokens[i] === '(') {
-                            const { node, newIndex } = parseTokens(tokens, i + 1, depth + 1);
-                            orGroup.push(node);
-                            i = newIndex;
-                        } else {
-                            const nextToken = tokens[i];
-                            
-                            if (i + 1 < tokens.length && tokens[i + 1] === '|') {
-                                orGroup.push(parseFilterToken(nextToken));
-                                i++;
-                            } else {
-                                orGroup.push(parseFilterToken(nextToken));
-                                i++;
-                                break;
-                            }
-                        }
-                    }
-                    
-                    andGroup.push({ type: 'OR', children: orGroup });
-                } else {
-                    andGroup.push(filter);
-                    i++;
-                }
-            } catch (e) {
-                console.warn(`Skipping invalid filter: ${token} - ${e.message}`);
-                i++;
-            }
-        }
-    }
-    
-    let result;
-    if (andGroup.length === 0) {
-        result = { type: 'AND', children: [] };
-    } else if (andGroup.length === 1) {
-        result = andGroup[0];
-    } else {
-        result = { type: 'AND', children: andGroup };
-    }
-    
-    return { node: result, newIndex: i };
-}
-
-function matchesWildcard(text, pattern, regex) {
-    if (!text) return false;
-    if (regex) return regex.test(String(text));
-    return String(text).toLowerCase() === pattern.toLowerCase();
-}
-
-function matchFilter(post, filter, searchQuery = '') {
-    const { key, value, isNeg, operator, regex } = filter;
-    let match = false;
-    
-    try {
-        // Tag count
-        if (key === 'tag_count') {
-            const tagCount = post.tags ? post.tags.length : 0;
-            
-            if (operator === 'pattern') {
-                match = regex.test(String(tagCount));
-            } else {
-                switch (operator) {
-                    case '>': match = tagCount > value; break;
-                    case '>=': match = tagCount >= value; break;
-                    case '<': match = tagCount < value; break;
-                    case '<=': match = tagCount <= value; break;
-                    case '=': match = tagCount === value; break;
-                }
-            }
-        }
-        // Matching tags (requires search context)
-        else if (key === 'matching_tags') {
-            // Count how many search tags this post matches
-            const matchCount = post.matchingTags ? post.matchingTags.length : 0;
-            
-            if (operator === 'pattern') {
-                match = regex.test(String(matchCount));
-            } else {
-                switch (operator) {
-                    case '>': match = matchCount > value; break;
-                    case '>=': match = matchCount >= value; break;
-                    case '<': match = matchCount < value; break;
-                    case '<=': match = matchCount <= value; break;
-                    case '=': match = matchCount === value; break;
-                }
-            }
-        }
-        // File size
-        else if (key === 'file_size') {
-            const fileSize = post.file_size || 0;
-            
-            if (operator === 'pattern') {
-                match = regex.test(String(fileSize));
-            } else {
-                switch (operator) {
-                    case '>': match = fileSize > value; break;
-                    case '>=': match = fileSize >= value; break;
-                    case '<': match = fileSize < value; break;
-                    case '<=': match = fileSize <= value; break;
-                    case '=': match = fileSize === value; break;
-                }
-            }
-        }
-        // Duration (only match posts with duration)
-        else if (key === 'duration') {
-            if (!post.duration) {
-                match = false;  // Exclude posts without duration when duration filter is active
-            } else {
-                const duration = parseFloat(post.duration);
-                
-                if (operator === 'pattern') {
-                    match = regex.test(String(duration));
-                } else {
-                    switch (operator) {
-                        case '>': match = duration > value; break;
-                        case '>=': match = duration >= value; break;
-                        case '<': match = duration < value; break;
-                        case '<=': match = duration <= value; break;
-                        case '=': match = duration === value; break;
-                    }
-                }
-            }
-        }
-        // Other numeric fields
-        else if (['score', 'width', 'height'].includes(key)) {
-            const postValue = parseInt(post[key]) || 0;
-            
-            if (operator === 'pattern') {
-                match = regex.test(String(postValue));
-            } else {
-                const filterValue = parseInt(value);
-                switch (operator) {
-                    case '>': match = postValue > filterValue; break;
-                    case '>=': match = postValue >= filterValue; break;
-                    case '<': match = postValue < filterValue; break;
-                    case '<=': match = postValue <= filterValue; break;
-                    case '=': match = postValue === filterValue; break;
-                }
-            }
-        } else if (key === 'tag') {
-            match = post.tags && post.tags.some(t => matchesWildcard(t, value, regex));
-        } else if (key === 'owner') {
-            match = matchesWildcard(post.owner, value, regex);
-        } else if (key === 'file_type') {
-            const postType = (post.file_type || '').replace('.', '').toLowerCase();
-            const searchType = value.replace('.', '').toLowerCase();
-            match = matchesWildcard(postType, searchType, regex);
-        } else if (key === 'title') {
-            match = matchesWildcard(post.title || '', value, regex);
-        } else if (key === 'rating') {
-            match = matchesWildcard(post.rating || '', value, regex);
-        }
-    } catch (e) {
-        console.warn(`Filter match error:`, e);
-        match = false;
-    }
-    
-    return isNeg ? !match : match;
-}
-
-export function matchNode(post, node) {
-    if (!node) return true;
-    
-    switch (node.type) {
-        case 'FILTER':
-            return matchFilter(post, node);
-        case 'AND':
-            return node.children.every(child => matchNode(post, child));
-        case 'OR':
-            return node.children.some(child => matchNode(post, child));
-        default:
-            return true;
-    }
-}
-
-export function parseQueryTree(query) {
-    if (!query || !query.trim()) {
-        return { type: 'AND', children: [], errors: [] };
-    }
-    
-    try {
-        const tokens = tokenize(query);
-        const { node } = parseTokens(tokens, 0, 0);
-        return { ...node, errors: [] };
-    } catch (e) {
-        console.error('Parse error:', e);
-        return {
-            type: 'AND',
-            children: [],
-            errors: [e.message]
-        };
-    }
-}
+// Export essential functions only
+export {
+    extractSearchTags,
+    extractMetadata,
+    countMatchingTags,
+    matchesWildcard,
+    validateQuery,
+    parseSizeDisplay,
+    formatDuration
+};

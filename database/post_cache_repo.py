@@ -261,7 +261,7 @@ class PostCacheRepository:
             return True
 
     def rebuild_cache_from_files(self, file_manager) -> bool:
-        """Rebuild the entire cache from file_manager"""
+        """Rebuild the entire cache from file_manager with progress logging"""
         logger.info("Starting full cache rebuild...")
         start_time = datetime.now()
         try:
@@ -273,15 +273,34 @@ class PostCacheRepository:
             pending = file_manager.get_pending_posts()
             saved = file_manager.get_saved_posts()
             all_posts = pending + saved
+            total = len(all_posts)
 
-            logger.info(f"Caching {len(all_posts)} posts...")
+            logger.info(f"Caching {total} posts...")
+            
+            # Calculate progress milestones (every 10%)
+            milestones = set()
+            for pct in range(10, 100, 10):
+                milestones.add(int(total * pct / 100))
+            
             for i, post in enumerate(all_posts):
                 self.cache_post(post)
-                if (i + 1) % 1000 == 0:
-                    logger.info(f"Cached {i + 1}/{len(all_posts)} posts...")
+                
+                # Log at 10% intervals
+                if (i + 1) in milestones:
+                    percentage = int(((i + 1) / total) * 100)
+                    elapsed = (datetime.now() - start_time).total_seconds()
+                    rate = (i + 1) / elapsed if elapsed > 0 else 0
+                    remaining = (total - (i + 1)) / rate if rate > 0 else 0
+                    
+                    logger.info(
+                        f"Cache rebuild progress: {percentage}% "
+                        f"({i + 1}/{total} posts, "
+                        f"{rate:.1f} posts/sec, "
+                        f"~{remaining:.0f}s remaining)"
+                    )
 
             elapsed = (datetime.now() - start_time).total_seconds()
-            logger.info(f"Cache rebuild complete: {len(all_posts)} posts in {elapsed:.2f}s")
+            logger.info(f"Cache rebuild complete: {total} posts in {elapsed:.2f}s ({total/elapsed:.1f} posts/sec)")
             return True
         except Exception as e:
             logger.error(f"Cache rebuild failed: {e}", exc_info=True)

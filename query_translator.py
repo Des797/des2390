@@ -1,12 +1,12 @@
 """
 Advanced Query Parser: Frontend Syntax → SQL Translator
-FIXED: Handles tags with parentheses like luke_(star_wars)
-ADDED: Tag-Count:, Duration:, Size:, Matching-Tags: operators
+ENHANCED: Flexible operators, Sort/Per-Page, Date filters, Aspect-Ratio
 """
 import re
 import logging
 from typing import List, Dict, Any, Tuple, Optional
 from dataclasses import dataclass
+from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +24,14 @@ class FilterNode:
     def __post_init__(self):
         if self.children is None:
             self.children = []
+
+
+@dataclass
+class QueryMetadata:
+    """Metadata extracted from query (sort, per-page, etc)"""
+    sort_by: Optional[str] = None
+    sort_order: Optional[str] = None
+    per_page: Optional[int] = None
 
 
 class QueryTranslator:
@@ -44,13 +52,29 @@ class QueryTranslator:
         'tags': 'tag_count',
         'size': 'file_size',
         'filesize': 'file_size',
+        'file-size': 'file_size',
         'matching-tags': 'matching_tags',
         'matchingtags': 'matching_tags',
-        'matches': 'matching_tags'
+        'matches': 'matching_tags',
+        'date-created': 'created_at',
+        'datecreated': 'created_at',
+        'upload-date': 'created_at',
+        'uploaded': 'created_at',
+        'date-downloaded': 'downloaded_at',
+        'datedownloaded': 'downloaded_at',
+        'download-date': 'downloaded_at',
+        'downloaded': 'downloaded_at',
+        'aspect-ratio': 'aspect_ratio',
+        'aspectratio': 'aspect_ratio',
+        'ratio': 'aspect_ratio'
     }
     
-    NUMERIC_FIELDS = {'score', 'width', 'height', 'post_id', 'tag_count', 'file_size', 'duration', 'matching_tags'}
+    NUMERIC_FIELDS = {
+        'score', 'width', 'height', 'post_id', 'tag_count', 
+        'file_size', 'duration', 'matching_tags', 'aspect_ratio'
+    }
     TEXT_FIELDS = {'owner', 'title', 'rating', 'file_type'}
+    DATE_FIELDS = {'created_at', 'downloaded_at'}
     
     # Size unit conversions to bytes
     SIZE_UNITS = {
@@ -62,29 +86,64 @@ class QueryTranslator:
         'tb': 1024**4, 'terabyte': 1024**4, 'terabytes': 1024**4
     }
     
+    # Sort field mappings
+    SORT_ALIASES = {
+        'download': 'downloaded_at',
+        'download-date': 'downloaded_at',
+        'download_date': 'downloaded_at',
+        'downloaded': 'downloaded_at',
+        'upload': 'created_at',
+        'upload-date': 'created_at',
+        'upload_date': 'created_at',
+        'uploaded': 'created_at',
+        'created': 'created_at',
+        'id': 'post_id',
+        'post-id': 'post_id',
+        'post_id': 'post_id',
+        'tags': 'tag_count',
+        'tag-count': 'tag_count',
+        'tag_count': 'tag_count',
+        'tagcount': 'tag_count',
+        'file-size': 'file_size',
+        'filesize': 'file_size',
+        'file_size': 'file_size',
+        'size': 'file_size',
+        'score': 'score',
+        'width': 'width',
+        'height': 'height',
+        'owner': 'owner',
+        'user': 'owner',
+        'creator': 'owner',
+        'rating': 'rating',
+        'duration': 'duration',
+        'time': 'duration',
+        'length': 'duration',
+        'timestamp': 'timestamp',
+        'random': 'random'
+    }
+    
     def __init__(self):
         self.exclusion_prefixes = ['-', '!', 'exclude:', 'remove:', 'negate:', 'not:']
-        logger.info("QueryTranslator initialized with new operators")
+        logger.info("QueryTranslator initialized with enhanced features")
     
-    def translate(self, query: str, status: Optional[str] = None) -> Tuple[str, List[Any]]:
+    def translate(self, query: str, status: Optional[str] = None) -> Tuple[str, List[Any], QueryMetadata]:
         """
         Translate frontend query to SQL WHERE clause
         
-        Args:
-            query: Frontend query string
-            status: Optional status filter (pending/saved/all)
-        
         Returns:
-            (sql_where_clause, params_list)
+            (sql_where_clause, params_list, metadata)
         """
         if not query or not query.strip():
             if status:
-                return "status = ?", [status]
-            return "1=1", []
+                return "status = ?", [status], QueryMetadata()
+            return "1=1", [], QueryMetadata()
         
         try:
+            # Extract metadata (sort:, per-page:, etc)
+            clean_query, metadata = self._extract_metadata(query)
+            
             # Parse query into AST
-            ast = self._parse_query(query)
+            ast = self._parse_query(clean_query)
             
             # Convert AST to SQL
             sql, params = self._ast_to_sql(ast)
@@ -95,92 +154,162 @@ class QueryTranslator:
                 params.append(status)
             
             logger.debug(f"Translated query '{query}' to SQL: {sql}")
-            logger.debug(f"Params: {params}")
+            logger.debug(f"Params: {params}, Metadata: {metadata}")
             
-            return sql, params
+            return sql, params, metadata
             
         except Exception as e:
             logger.error(f"Query translation failed for '{query}': {e}", exc_info=True)
             if status:
-                return "status = ?", [status]
-            return "1=1", []
+                return "status = ?", [status], QueryMetadata()
+            return "1=1", [], QueryMetadata()
     
-    def _parse_query(self, query: str) -> FilterNode:
-        """Parse query string into AST"""
-        logger.debug(f"[Translator] Starting parse of query: '{query}'")
-        tokens = self._tokenize(query)
-        logger.debug(f"[Translator] Tokens: {tokens}")
-        ast, _ = self._parse_tokens(tokens, 0, 0)
-        logger.debug(f"[Translator] AST: {ast}")
-        return ast
+    def _extract_metadata(self, query: str) -> Tuple[str, QueryMetadata]:
+        """Extract sort:, per-page:, etc from query"""
+        metadata = QueryMetadata()
+        clean_parts = []
+        
+        # Split into tokens
+        tokens = query.split()
+        i = 0
+        
+        while i < len(tokens):
+            token = tokens[i]
+            
+            # Check for sort:
+            if token.lower().startswith('sort:'):
+                sort_value = token[5:]  # Remove 'sort:'
+                if sort_value:
+                    metadata.sort_by, metadata.sort_order = self._parse_sort_value(sort_value)
+                i += 1
+                continue
+            
+            # Check for per-page:
+            if token.lower().startswith('per-page:'):
+                try:
+                    per_page = int(token[9:])  # Remove 'per-page:'
+                    metadata.per_page = max(1, min(per_page, 200))  # Clamp 1-200
+                except ValueError:
+                    logger.warning(f"Invalid per-page value: {token}")
+                i += 1
+                continue
+            
+            # Not metadata, keep it
+            clean_parts.append(token)
+            i += 1
+        
+        clean_query = ' '.join(clean_parts)
+        return clean_query, metadata
+    
+    def _parse_sort_value(self, value: str) -> Tuple[Optional[str], Optional[str]]:
+        """
+        Parse sort value with flexible syntax
+        
+        Examples:
+        - download-date → ('downloaded_at', None)
+        - download-date-desc → ('downloaded_at', 'DESC')
+        - size-ascending → ('file_size', 'ASC')
+        - size> → ('file_size', 'ASC')
+        - >size → ('file_size', 'DESC')
+        - duration;size-asc → ('duration,file_size', 'ASC')
+        """
+        if not value:
+            return None, None
+        
+        # Handle quoted values
+        value = value.strip('"\'')
+        
+        # Handle direction indicators
+        if value.endswith('>'):
+            field = value[:-1]
+            order = 'ASC'
+        elif value.startswith('>'):
+            field = value[1:]
+            order = 'DESC'
+        elif value.endswith('<'):
+            field = value[:-1]
+            order = 'DESC'
+        elif value.startswith('<'):
+            field = value[1:]
+            order = 'ASC'
+        else:
+            # Check for -desc, -asc suffix
+            if value.endswith('-desc') or value.endswith('_desc'):
+                field = value[:-5]
+                order = 'DESC'
+            elif value.endswith('-descending') or value.endswith('_descending'):
+                field = value[:-11]
+                order = 'DESC'
+            elif value.endswith('-asc') or value.endswith('_asc'):
+                field = value[:-4]
+                order = 'ASC'
+            elif value.endswith('-ascending') or value.endswith('_ascending'):
+                field = value[:-10]
+                order = 'ASC'
+            else:
+                field = value
+                order = None
+        
+        # Handle multiple fields (duration;size)
+        if ';' in field or ',' in field:
+            separator = ';' if ';' in field else ','
+            fields = [f.strip() for f in field.split(separator)]
+            normalized_fields = []
+            for f in fields:
+                normalized = self.SORT_ALIASES.get(f.lower().replace(' ', '-'), f)
+                normalized_fields.append(normalized)
+            return ','.join(normalized_fields), order
+        
+        # Normalize field name
+        field = field.lower().replace(' ', '-')
+        normalized_field = self.SORT_ALIASES.get(field, field)
+        
+        return normalized_field, order
     
     def _is_field_prefix(self, text: str, pos: int) -> bool:
-        """
-        Check if the character before position is part of a field: prefix
-        This helps distinguish between grouping parens and tag parens
-        """
+        """Check if position is inside a field: value"""
         if pos == 0:
             return False
         
-        # Look backwards for field: pattern
-        check_start = max(0, pos - 50)  # Check up to 50 chars back
+        check_start = max(0, pos - 50)
         substring = text[check_start:pos]
         
-        # Check if we have field: pattern right before this position
         field_pattern = r'(\w+):([^\s]*?)$'
         match = re.search(field_pattern, substring)
         
-        if match:
-            # We found a field: pattern, now check if we're inside the value part
-            value_part = match.group(2)
-            return True
-        
-        return False
+        return match is not None
     
     def _tokenize(self, query: str) -> List[str]:
-        """
-        Tokenize query string with SMART parenthesis detection
-        
-        Strategy:
-        1. If ( or ) appears after field: prefix, it's part of the value
-        2. If ( or ) is preceded/followed by alphanumeric or underscore, it's part of a tag
-        3. Otherwise, it's a grouping operator
-        """
+        """Tokenize query with smart parenthesis detection"""
         tokens = []
         buffer = ''
         paren_depth = 0
-        i = 0
         in_field_value = False
+        i = 0
         
         while i < len(query):
             char = query[i]
             
-            # Check if we're starting a field value
             if char == ':' and buffer and buffer[-1].isalnum():
                 buffer += char
                 in_field_value = True
                 i += 1
                 continue
             
-            # Reset field value flag on whitespace at depth 0
             if char == ' ' and paren_depth == 0:
                 in_field_value = False
             
             if char == '(':
-                # Determine if this is a grouping paren or part of a tag/value
                 is_tag_paren = False
                 
-                # Check if we're inside a field value
                 if in_field_value or self._is_field_prefix(query, i):
                     is_tag_paren = True
-                # Check if preceded by alphanumeric or underscore
                 elif buffer and (buffer[-1].isalnum() or buffer[-1] == '_'):
                     is_tag_paren = True
                 
                 if is_tag_paren:
                     buffer += char
                 else:
-                    # Grouping paren
                     if buffer.strip() and paren_depth == 0:
                         tokens.append(buffer.strip())
                         buffer = ''
@@ -188,23 +317,18 @@ class QueryTranslator:
                     tokens.append('(')
                 
             elif char == ')':
-                # Determine if this is a grouping paren or part of a tag/value
                 is_tag_paren = False
                 
-                # Check if we're inside a field value
                 if in_field_value or self._is_field_prefix(query, i + 1):
                     is_tag_paren = True
-                # Check if followed by alphanumeric or underscore
                 elif i + 1 < len(query) and (query[i + 1].isalnum() or query[i + 1] == '_'):
                     is_tag_paren = True
-                # Check if we're not at grouping depth
                 elif paren_depth == 0:
                     is_tag_paren = True
                 
                 if is_tag_paren:
                     buffer += char
                 else:
-                    # Grouping paren
                     if buffer.strip():
                         tokens.append(buffer.strip())
                         buffer = ''
@@ -223,7 +347,6 @@ class QueryTranslator:
                         tokens.append(buffer.strip())
                         buffer = ''
                 else:
-                    # Inside parens - preserve or tokenize based on next char
                     if buffer.strip():
                         next_idx = i + 1
                         while next_idx < len(query) and query[next_idx] == ' ':
@@ -244,6 +367,12 @@ class QueryTranslator:
         
         return [t for t in tokens if t]
     
+    def _parse_query(self, query: str) -> FilterNode:
+        """Parse query string into AST"""
+        tokens = self._tokenize(query)
+        ast, _ = self._parse_tokens(tokens, 0, 0)
+        return ast
+    
     def _parse_tokens(self, tokens: List[str], start_idx: int = 0, depth: int = 0) -> Tuple[FilterNode, int]:
         """Parse tokens into AST"""
         and_group = []
@@ -253,27 +382,21 @@ class QueryTranslator:
             token = tokens[i]
             
             if token == '(':
-                # Parse nested group
                 node, new_idx = self._parse_tokens(tokens, i + 1, depth + 1)
                 and_group.append(node)
                 i = new_idx
             elif token == ')':
-                # End of group
                 i += 1
                 break
             elif token == '|':
-                # Skip standalone OR
                 i += 1
             else:
-                # Parse filter token
                 filter_node = self._parse_filter_token(token)
                 
-                # Check if this starts an OR group
                 if i + 1 < len(tokens) and tokens[i + 1] == '|':
                     or_group = [filter_node]
                     i += 1
                     
-                    # Collect all OR items
                     while i < len(tokens):
                         if tokens[i] == '|':
                             i += 1
@@ -302,7 +425,6 @@ class QueryTranslator:
                     and_group.append(filter_node)
                     i += 1
         
-        # Build result node
         if len(and_group) == 0:
             result = FilterNode(type='AND')
         elif len(and_group) == 1:
@@ -313,11 +435,14 @@ class QueryTranslator:
         return result, i
     
     def _parse_size_value(self, value_str: str) -> int:
-        """Parse size value with units (e.g., '500kb', '1.5mb') into bytes"""
-        # Match number with optional decimal and unit
+        """Parse size value with units into bytes"""
         match = re.match(r'^([\d.]+)\s*([a-zA-Z]*)$', value_str.strip())
         if not match:
-            raise ValueError(f"Invalid size format: {value_str}")
+            # Try just number
+            try:
+                return int(float(value_str))
+            except ValueError:
+                raise ValueError(f"Invalid size format: {value_str}")
         
         number_str, unit_str = match.groups()
         try:
@@ -325,7 +450,6 @@ class QueryTranslator:
         except ValueError:
             raise ValueError(f"Invalid number in size: {number_str}")
         
-        # Default to bytes if no unit
         unit = unit_str.lower() if unit_str else 'b'
         
         multiplier = self.SIZE_UNITS.get(unit)
@@ -334,9 +458,42 @@ class QueryTranslator:
         
         return int(number * multiplier)
     
+    def _parse_flexible_operator(self, value: str) -> Tuple[str, str]:
+        """
+        Parse operator from value with flexible placement
+        
+        Examples:
+        - >=5kb → ('>=', '5kb')
+        - 5kb< → ('<', '5kb')
+        - 5kb → ('=', '5kb')
+        - 5000=> → ('=>', '5000')
+        """
+        # Try operator at start
+        op_match = re.match(r'^([<>]=?|=)(.+)$', value)
+        if op_match:
+            return op_match.group(1), op_match.group(2)
+        
+        # Try operator at end
+        op_match = re.match(r'^(.+?)([<>]=?|=)$', value)
+        if op_match:
+            num_part = op_match.group(1)
+            op = op_match.group(2)
+            # Reverse operator if at end
+            if op == '>':
+                op = '<'
+            elif op == '<':
+                op = '>'
+            elif op == '>=':
+                op = '<='
+            elif op == '<=':
+                op = '>='
+            return op, num_part
+        
+        # No operator found, default to =
+        return '=', value
+    
     def _parse_filter_token(self, token: str) -> FilterNode:
         """Parse a single filter token"""
-        # Extract negation
         is_negated = False
         core = token
         for prefix in self.exclusion_prefixes:
@@ -345,11 +502,9 @@ class QueryTranslator:
                 core = token[len(prefix):]
                 break
         
-        # Check for field:value syntax
         colon_match = re.match(r'^([a-zA-Z_-]+):(.+)$', core)
         
         if not colon_match:
-            # Plain tag search
             return FilterNode(
                 type='FILTER',
                 key='tag',
@@ -361,18 +516,76 @@ class QueryTranslator:
         field = colon_match.group(1).lower()
         value = colon_match.group(2)
         
-        # Normalize field name
         field = self.FIELD_ALIASES.get(field, field)
         
-        # Handle special fields
+        # Handle file_type - add dot if missing
+        if field == 'file_type':
+            if not value.startswith('.') and not value.startswith('('):
+                value = '.' + value
+        
+        # Special handling for different field types
         if field == 'file_size':
-            return self._parse_size_filter(value, is_negated)
+            operator, num_part = self._parse_flexible_operator(value)
+            size_bytes = self._parse_size_value(num_part)
+            return FilterNode(
+                type='FILTER',
+                key='file_size',
+                value=size_bytes,
+                operator=operator,
+                is_negated=is_negated
+            )
         elif field == 'duration':
-            return self._parse_duration_filter(value, is_negated)
-        elif field == 'tag_count' or field == 'matching_tags':
-            return self._parse_numeric_filter(field, value, is_negated)
+            operator, num_part = self._parse_flexible_operator(value)
+            try:
+                duration = float(num_part)
+            except ValueError:
+                raise ValueError(f"Invalid duration: {num_part}")
+            return FilterNode(
+                type='FILTER',
+                key='duration',
+                value=duration,
+                operator=operator,
+                is_negated=is_negated
+            )
+        elif field == 'aspect_ratio':
+            operator, num_part = self._parse_flexible_operator(value)
+            try:
+                ratio = float(num_part)
+            except ValueError:
+                raise ValueError(f"Invalid aspect ratio: {num_part}")
+            return FilterNode(
+                type='FILTER',
+                key='aspect_ratio',
+                value=ratio,
+                operator=operator,
+                is_negated=is_negated
+            )
+        elif field in self.DATE_FIELDS:
+            return self._parse_date_filter(field, value, is_negated)
         elif field in self.NUMERIC_FIELDS:
-            return self._parse_numeric_filter(field, value, is_negated)
+            operator, num_part = self._parse_flexible_operator(value)
+            
+            if '*' in num_part:
+                return FilterNode(
+                    type='FILTER',
+                    key=field,
+                    value=num_part,
+                    operator='pattern',
+                    is_negated=is_negated
+                )
+            
+            try:
+                num_value = int(num_part)
+            except ValueError:
+                raise ValueError(f"Invalid number in {field}: {num_part}")
+            
+            return FilterNode(
+                type='FILTER',
+                key=field,
+                value=num_value,
+                operator=operator,
+                is_negated=is_negated
+            )
         
         # Text field
         return FilterNode(
@@ -383,87 +596,88 @@ class QueryTranslator:
             is_negated=is_negated
         )
     
-    def _parse_size_filter(self, value: str, is_negated: bool) -> FilterNode:
-        """Parse size filter with units"""
-        # Check for operator
-        op_match = re.match(r'^([<>]=?|=)?(.+)$', value)
-        if not op_match:
-            raise ValueError(f"Invalid size filter: {value}")
+    def _parse_date_filter(self, field: str, value: str, is_negated: bool) -> FilterNode:
+        """Parse date filter - supports various formats including Unix timestamp"""
+        operator, date_part = self._parse_flexible_operator(value)
         
-        operator = op_match.group(1) or '='
-        size_str = op_match.group(2)
+        # Check if it's a Unix timestamp (all digits)
+        if date_part.isdigit():
+            try:
+                timestamp = int(date_part)
+                parsed_date = datetime.fromtimestamp(timestamp)
+                iso_datetime = parsed_date.strftime('%Y-%m-%d %H:%M:%S')
+                
+                return FilterNode(
+                    type='FILTER',
+                    key=field,
+                    value=iso_datetime,
+                    operator=operator,
+                    is_negated=is_negated
+                )
+            except (ValueError, OSError):
+                raise ValueError(f"Invalid Unix timestamp: {date_part}")
         
-        # Parse size with units
-        size_bytes = self._parse_size_value(size_str)
+        # Try datetime formats (with time)
+        datetime_formats = [
+            '%Y-%m-%d %H:%M:%S',
+            '%Y-%m-%d %H:%M',
+            '%Y/%m/%d %H:%M:%S',
+            '%Y/%m/%d %H:%M',
+            '%m-%d-%Y %H:%M:%S',
+            '%m-%d-%Y %H:%M',
+            '%d-%m-%Y %H:%M:%S',
+            '%d-%m-%Y %H:%M',
+        ]
         
-        return FilterNode(
-            type='FILTER',
-            key='file_size',
-            value=size_bytes,
-            operator=operator,
-            is_negated=is_negated
-        )
-    
-    def _parse_duration_filter(self, value: str, is_negated: bool) -> FilterNode:
-        """Parse duration filter (in seconds)"""
-        # Check for operator
-        op_match = re.match(r'^([<>]=?|=)?(.+)$', value)
-        if not op_match:
-            raise ValueError(f"Invalid duration filter: {value}")
+        parsed_date = None
+        has_time = False
         
-        operator = op_match.group(1) or '='
-        duration_str = op_match.group(2)
+        for fmt in datetime_formats:
+            try:
+                parsed_date = datetime.strptime(date_part, fmt)
+                has_time = True
+                break
+            except ValueError:
+                continue
         
-        # Parse duration (assume seconds)
-        try:
-            duration = float(duration_str)
-        except ValueError:
-            raise ValueError(f"Invalid duration number: {duration_str}")
+        # Try date-only formats
+        if not parsed_date:
+            date_formats = [
+                '%Y-%m-%d',
+                '%Y/%m/%d',
+                '%m-%d-%Y',
+                '%m/%d/%Y',
+                '%d-%m-%Y',
+                '%d/%m/%Y',
+                '%Y%m%d'
+            ]
+            
+            for fmt in date_formats:
+                try:
+                    parsed_date = datetime.strptime(date_part, fmt)
+                    break
+                except ValueError:
+                    continue
         
-        return FilterNode(
-            type='FILTER',
-            key='duration',
-            value=duration,
-            operator=operator,
-            is_negated=is_negated
-        )
-    
-    def _parse_numeric_filter(self, field: str, value: str, is_negated: bool) -> FilterNode:
-        """Parse numeric filter with operators"""
-        # Check for wildcard pattern
-        if '*' in value:
-            return FilterNode(
-                type='FILTER',
-                key=field,
-                value=value,
-                operator='pattern',
-                is_negated=is_negated
-            )
+        if not parsed_date:
+            raise ValueError(f"Invalid date format: {date_part}")
         
-        # Parse operator
-        op_match = re.match(r'^([<>]=?|=)?(.+)$', value)
-        if not op_match:
-            raise ValueError(f"Invalid numeric filter: {field}:{value}")
-        
-        operator = op_match.group(1) or '='
-        num_str = op_match.group(2)
-        
-        try:
-            num_value = int(num_str)
-        except ValueError:
-            raise ValueError(f"Invalid number in {field} filter: {num_str}")
+        # Format based on whether time was provided
+        if has_time:
+            iso_date = parsed_date.strftime('%Y-%m-%d %H:%M:%S')
+        else:
+            iso_date = parsed_date.strftime('%Y-%m-%d')
         
         return FilterNode(
             type='FILTER',
             key=field,
-            value=num_value,
+            value=iso_date,
             operator=operator,
             is_negated=is_negated
         )
     
     def _ast_to_sql(self, node: FilterNode) -> Tuple[str, List[Any]]:
         """Convert AST to SQL WHERE clause"""
-        logger.debug(f"[Translator] Converting AST node to SQL: {node}")
         if node.type == 'FILTER':
             sql, params = self._filter_to_sql(node)
         elif node.type == 'AND':
@@ -473,7 +687,6 @@ class QueryTranslator:
         else:
             sql, params = "1=1", []
         
-        logger.debug(f"[Translator] SQL fragment: {sql}, params: {params}")
         return sql, params
     
     def _filter_to_sql(self, node: FilterNode) -> Tuple[str, List[Any]]:
@@ -483,33 +696,20 @@ class QueryTranslator:
         operator = node.operator
         is_negated = node.is_negated
         
-        logger.debug(f"Converting filter to SQL: key={key}, value={value}, op={operator}, neg={is_negated}")
-        
         # Tag search
         if key == 'tag':
             if '*' in value:
                 pattern = value.replace('*', '%')
                 search_pattern = f'%"{pattern}"%'
-                
-                if is_negated:
-                    sql = "tags NOT LIKE ?"
-                else:
-                    sql = "tags LIKE ?"
-                
+                sql = "tags NOT LIKE ?" if is_negated else "tags LIKE ?"
                 return sql, [search_pattern]
             else:
                 search_pattern = f'%"{value}"%'
-                
-                if is_negated:
-                    sql = "tags NOT LIKE ?"
-                else:
-                    sql = "tags LIKE ?"
-                
+                sql = "tags NOT LIKE ?" if is_negated else "tags LIKE ?"
                 return sql, [search_pattern]
         
-        # Tag count (computed from JSON array)
+        # Tag count
         if key == 'tag_count':
-            # Calculate tag count from JSON array length
             if operator == 'pattern':
                 pattern = value.replace('*', '%')
                 if is_negated:
@@ -522,52 +722,53 @@ class QueryTranslator:
                     op_inverse = {'=': '!=', '>': '<=', '>=': '<', '<': '>=', '<=': '>'}
                     sql_op = op_inverse.get(operator, '!=')
                 
-                # Count commas + 1 = number of tags (works for ["tag1","tag2"])
                 return f"(length(tags) - length(replace(tags, ',', '')) + 1) {sql_op} ?", [value]
         
-        # Matching tags (special case - needs to be handled in application layer)
-        # This would require knowing the search query, so we'll add a placeholder
+        # Aspect ratio (computed from width/height)
+        if key == 'aspect_ratio':
+            sql_op = operator
+            if is_negated:
+                op_inverse = {'=': '!=', '>': '<=', '>=': '<', '<': '>=', '<=': '>'}
+                sql_op = op_inverse.get(operator, '!=')
+            
+            # Calculate aspect ratio as width/height
+            return f"(CAST(width AS REAL) / CAST(height AS REAL)) {sql_op} ?", [value]
+        
+        # Matching tags (placeholder - handled in app layer)
         if key == 'matching_tags':
-            # This is tricky - we can't compute this in SQL without the search context
-            # For now, we'll return a placeholder that always matches
-            # The application layer would need to handle this
             logger.warning("matching_tags filter requires application-layer filtering")
             return "1=1", []
         
-        # File size
-        if key == 'file_size':
+        # Date fields
+        if key in self.DATE_FIELDS:
+            sql_op = operator
+            if is_negated:
+                op_inverse = {'=': '!=', '>': '<=', '>=': '<', '<': '>=', '<=': '>'}
+                sql_op = op_inverse.get(operator, '!=')
+            
+            # Date comparison
+            return f"DATE({key}) {sql_op} DATE(?)", [value]
+        
+        # File size, duration
+        if key in ['file_size', 'duration']:
             if operator == 'pattern':
                 pattern = value.replace('*', '%')
                 if is_negated:
-                    return f"CAST(file_size AS TEXT) NOT LIKE ?", [pattern]
+                    return f"CAST({key} AS TEXT) NOT LIKE ?", [pattern]
                 else:
-                    return f"CAST(file_size AS TEXT) LIKE ?", [pattern]
+                    return f"CAST({key} AS TEXT) LIKE ?", [pattern]
             else:
                 sql_op = operator
                 if is_negated:
                     op_inverse = {'=': '!=', '>': '<=', '>=': '<', '<': '>=', '<=': '>'}
                     sql_op = op_inverse.get(operator, '!=')
                 
-                return f"file_size {sql_op} ?", [value]
-        
-        # Duration (filter out NULL values when using duration filter)
-        if key == 'duration':
-            if operator == 'pattern':
-                pattern = value.replace('*', '%')
-                if is_negated:
-                    return f"(duration IS NOT NULL AND CAST(duration AS TEXT) NOT LIKE ?)", [pattern]
+                if key == 'duration':
+                    return f"({key} IS NOT NULL AND {key} {sql_op} ?)", [value]
                 else:
-                    return f"(duration IS NOT NULL AND CAST(duration AS TEXT) LIKE ?)", [pattern]
-            else:
-                sql_op = operator
-                if is_negated:
-                    op_inverse = {'=': '!=', '>': '<=', '>=': '<', '<': '>=', '<=': '>'}
-                    sql_op = op_inverse.get(operator, '!=')
-                
-                # Only show posts with duration when duration filter is active
-                return f"(duration IS NOT NULL AND duration {sql_op} ?)", [value]
+                    return f"{key} {sql_op} ?", [value]
         
-        # Numeric fields
+        # Other numeric fields
         if key in self.NUMERIC_FIELDS:
             if operator == 'pattern':
                 pattern = value.replace('*', '%')
@@ -597,7 +798,6 @@ class QueryTranslator:
                 else:
                     return f"LOWER({key}) = LOWER(?)", [value]
         
-        # Fallback
         return "1=1", []
     
     def _and_to_sql(self, node: FilterNode) -> Tuple[str, List[Any]]:
