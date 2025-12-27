@@ -28,6 +28,9 @@ class Config:
     # Database Configuration
     DATABASE_PATH = os.environ.get('DATABASE_PATH', 'rule34_scraper.db')
     
+    # Cache Sync Configuration
+    AUTO_SYNC_DISK = os.environ.get('AUTO_SYNC_DISK', 'False').lower() == 'true'  # NEW: Default to False
+    
     # Logging Configuration
     LOG_FILE = os.environ.get('LOG_FILE', 'rule34_scraper.log')
     LOG_LEVEL = os.environ.get('LOG_LEVEL', 'INFO')  # Changed from DEBUG for production
@@ -156,6 +159,10 @@ class Config:
         if cls.PORT in [80, 443, 8080, 5000, 3000]:
             issues.append(f'INFO: Using common port {cls.PORT}. Consider using a non-standard port for obscurity.')
         
+        # Auto-sync warning
+        if cls.AUTO_SYNC_DISK:
+            issues.append('INFO: AUTO_SYNC_DISK is enabled. Cache will rebuild from disk on every startup (takes 2-5 minutes).')
+        
         return issues
     
     @classmethod
@@ -189,6 +196,7 @@ class Config:
         print(f"Log File: {cls.LOG_FILE}")
         print(f"Elasticsearch: {'Enabled' if cls.ELASTICSEARCH_ENABLED else 'Disabled'}")
         print(f"Local Network Only: {cls.REQUIRE_LOCAL_NETWORK}")
+        print(f"Auto-Sync Disk: {'Enabled' if cls.AUTO_SYNC_DISK else 'Disabled'}")
         
         # Print validation issues
         issues = cls.validate()
@@ -207,6 +215,17 @@ class Config:
         if local_ip != "Unable to determine":
             print(f"  2. Access from other devices: http://{local_ip}:{cls.PORT}")
         print("  3. Use the credentials above to log in")
+        
+        if not cls.AUTO_SYNC_DISK:
+            print("\nCache Sync:")
+            print("  - Auto-sync is DISABLED (fast startup)")
+            print("  - To enable: set AUTO_SYNC_DISK=true environment variable")
+            print("  - Or manually rebuild via /api/rebuild_cache endpoint")
+        else:
+            print("\nCache Sync:")
+            print("  - Auto-sync is ENABLED (rebuilds on startup)")
+            print("  - Expected rebuild time: 2-5 minutes for 200k posts")
+        
         print("=" * 60)
 
 

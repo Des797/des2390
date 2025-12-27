@@ -223,8 +223,5 @@ export {
     extractSearchTags,
     extractMetadata,
     countMatchingTags,
-    matchesWildcard,
-    validateQuery,
-    parseSizeDisplay,
-    formatDuration
+    matchesWildcard
 };

@@ -261,8 +261,8 @@ class PostCacheRepository:
             return True
 
     def rebuild_cache_from_files(self, file_manager) -> bool:
-        """Rebuild the entire cache from file_manager with progress logging"""
-        logger.info("Starting full cache rebuild...")
+        """Rebuild the entire cache from file_manager with OPTIMIZED bulk inserts"""
+        logger.info("Starting OPTIMIZED cache rebuild with bulk inserts...")
         start_time = datetime.now()
         try:
             # Clear existing cache first
@@ -275,32 +275,66 @@ class PostCacheRepository:
             all_posts = pending + saved
             total = len(all_posts)
 
-            logger.info(f"Caching {total} posts...")
+            logger.info(f"Caching {total:,} posts with bulk inserts...")
             
-            # Calculate progress milestones (every 10%)
-            milestones = set()
-            for pct in range(10, 100, 10):
-                milestones.add(int(total * pct / 100))
+            # OPTIMIZED: Bulk insert in chunks (1000 posts per transaction)
+            CHUNK_SIZE = 1000
+            chunks_total = (total + CHUNK_SIZE - 1) // CHUNK_SIZE
             
-            for i, post in enumerate(all_posts):
-                self.cache_post(post)
-                
-                # Log at 10% intervals
-                if (i + 1) in milestones:
-                    percentage = int(((i + 1) / total) * 100)
-                    elapsed = (datetime.now() - start_time).total_seconds()
-                    rate = (i + 1) / elapsed if elapsed > 0 else 0
-                    remaining = (total - (i + 1)) / rate if rate > 0 else 0
+            with self.core.get_connection() as conn:
+                for chunk_idx, chunk_start in enumerate(range(0, total, CHUNK_SIZE), 1):
+                    chunk_end = min(chunk_start + CHUNK_SIZE, total)
+                    chunk = all_posts[chunk_start:chunk_end]
                     
-                    logger.info(
-                        f"Cache rebuild progress: {percentage}% "
-                        f"({i + 1}/{total} posts, "
-                        f"{rate:.1f} posts/sec, "
-                        f"~{remaining:.0f}s remaining)"
-                    )
+                    # Prepare bulk insert data
+                    values = []
+                    for post in chunk:
+                        values.append((
+                            post['id'],
+                            post.get('status', 'pending'),
+                            post.get('title', ''),
+                            post.get('owner', ''),
+                            post.get('score', 0),
+                            post.get('rating', ''),
+                            post.get('width', 0),
+                            post.get('height', 0),
+                            post.get('file_type', ''),
+                            json.dumps(post.get('tags', [])),
+                            post.get('date_folder', ''),
+                            post.get('timestamp', 0),
+                            post.get('file_path', ''),
+                            post.get('downloaded_at', ''),
+                            post.get('created_at', ''),
+                            post.get('duration', None),
+                            post.get('file_size', None)
+                        ))
+                    
+                    # Execute bulk insert in single transaction
+                    with conn:
+                        conn.executemany(
+                            """INSERT OR REPLACE INTO post_cache 
+                               (post_id, status, title, owner, score, rating, 
+                                width, height, file_type, tags, date_folder, 
+                                timestamp, file_path, downloaded_at, created_at, duration, file_size)
+                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                            values
+                        )
+                    
+                    # Progress logging every 10 chunks or at milestones
+                    if chunk_idx % 10 == 0 or chunk_idx == chunks_total:
+                        percentage = int((chunk_end / total) * 100)
+                        elapsed = (datetime.now() - start_time).total_seconds()
+                        rate = chunk_end / elapsed if elapsed > 0 else 0
+                        remaining = (total - chunk_end) / rate if rate > 0 else 0
+                        
+                        logger.info(
+                            f"Cache rebuild: {percentage}% ({chunk_end:,}/{total:,} posts, "
+                            f"{rate:.0f} posts/sec, ~{remaining:.0f}s remaining)"
+                        )
 
             elapsed = (datetime.now() - start_time).total_seconds()
-            logger.info(f"Cache rebuild complete: {total} posts in {elapsed:.2f}s ({total/elapsed:.1f} posts/sec)")
+            rate = total / elapsed if elapsed > 0 else 0
+            logger.info(f"Cache rebuild complete: {total:,} posts in {elapsed:.2f}s ({rate:.0f} posts/sec)")
             return True
         except Exception as e:
             logger.error(f"Cache rebuild failed: {e}", exc_info=True)

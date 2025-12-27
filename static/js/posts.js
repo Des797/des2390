@@ -890,8 +890,6 @@ function refreshCurrentPage() {
 window.refreshCurrentPage = refreshCurrentPage;
 
 export {
-    handleQueryMetadata,
-    showMetadataIndicators,
     loadPosts,
     clearSelection,
     selectAllOnPage,
